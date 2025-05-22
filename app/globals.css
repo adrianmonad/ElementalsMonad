@@ -1,0 +1,610 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap');
+
+/* Import Minecraft Font */
+@font-face {
+  font-family: 'Minecraft';
+  src: url('/fonts/Minecraft-1.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Import Pixel Intv Font */
+@font-face {
+  font-family: 'PixelIntv';
+  src: url('/fonts/Pixel Intv.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Keep other fonts as fallback */
+@font-face {
+  font-family: 'SuperPixel';
+  src: url('/fonts/Super Pixel Personal Use.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'PressStart2P';
+  src: url('/fonts/pixelfont.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Updated color palette */
+  --ro-bg-dark: #0e0e0e;
+  --ro-bg-blue: #1a1a1a;
+  --ro-panel-bg: #161616;
+  --ro-panel-light: #252525;
+  --ro-border-dark: #0e0e0e;
+  --ro-border-light: #333333;
+  --ro-text: #ffffff;
+  --ro-text-shadow: #000000;
+  --ro-gold: #ffc107;  /* Deep gold */
+  --ro-accent: #ff7043;  /* Ember orange */
+  --ro-health: #ff5555;
+  --ro-mana: #9c27b0;  /* Amethyst purple */
+  --ro-exp: #66cc66;
+  --ro-item-common: #9e9e9e;  /* Steel gray */
+  --ro-item-uncommon: #66cc66;
+  --ro-item-rare: #42a5f5;
+  --ro-item-epic: #ba68c8;  /* Light amethyst */
+  --ro-item-legendary: #ffa726;  /* Light ember */
+  --ro-item-ultra: #ff5252;
+  
+  /* Font family */
+  --pixel-font: 'Minecraft', 'PixelIntv', 'SuperPixel', 'PressStart2P', monospace;
+}
+
+body {
+  color: var(--ro-text);
+  background-color: var(--ro-bg-dark);
+  background-image: linear-gradient(to bottom, var(--ro-bg-dark), var(--ro-bg-blue));
+  font-family: var(--pixel-font);
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  overflow-x: hidden;
+  image-rendering: pixelated;
+}
+
+/* Apply pixel font globally to all elements */
+html, body, button, input, select, textarea {
+  font-family: var(--pixel-font);
+  letter-spacing: 0.05em;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Pixel Font */
+.font-pixel {
+  font-family: var(--pixel-font);
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+}
+
+/* Spinner animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Text Shadow */
+.text-shadow {
+  text-shadow: 2px 2px 0 var(--ro-text-shadow);
+}
+
+/* Pixel Art Rendering */
+.pixelated {
+  image-rendering: pixelated;
+}
+
+/* Ragnarok Online UI Components */
+
+/* Main Window */
+.ro-window {
+  background-color: var(--ro-panel-light);
+  border: 2px solid var(--ro-border-light);
+  box-shadow: 0 4px 0 0 var(--ro-border-dark);
+  overflow: hidden;
+  position: relative;
+  image-rendering: pixelated;
+  padding: 4px;
+}
+
+/* Window Header */
+.ro-window-header {
+  background-color: var(--ro-accent);
+  padding: 0.5rem;
+  border-bottom: 2px solid var(--ro-border-dark);
+  color: var(--ro-gold);
+  font-family: var(--pixel-font);
+  text-transform: uppercase;
+  font-size: 0.95rem;
+  text-align: center;
+  letter-spacing: 0.05em;
+  text-shadow: 1px 1px 0 var(--ro-text-shadow);
+  position: relative;
+  margin: -4px -4px 4px -4px;
+}
+
+/* Window Content */
+.ro-window-content {
+  padding: 8px 4px;
+}
+
+/* Item Slot */
+.ro-item-slot {
+  background-color: var(--ro-bg-dark);
+  border: 2px solid var(--ro-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Button Styles */
+.ro-button {
+  background-color: var(--ro-panel-light);
+  color: var(--ro-gold);
+  border: 2px solid var(--ro-gold);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 3px 0 0 var(--ro-border-dark);
+  padding: 6px 12px;
+  font-family: var(--pixel-font);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  position: relative;
+  text-align: center;
+  text-shadow: 1px 1px 0 var(--ro-text-shadow);
+  image-rendering: pixelated;
+  display: inline-block;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  position: relative;
+  overflow: visible;
+}
+
+.ro-button::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 1px dashed rgba(255, 193, 7, 0.3);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ro-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 193, 7, 0.15), transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ro-button:hover {
+  background-color: var(--ro-accent);
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 5px 0 0 var(--ro-border-dark);
+}
+
+.ro-button:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 0 0 0 var(--ro-border-dark);
+}
+
+.ro-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 3px 0 0 var(--ro-border-dark);
+}
+
+/* Secondary Button Style */
+.ro-button-secondary {
+  background-color: var(--ro-bg-dark);
+  color: #ffffff;
+  border: 2px solid #555555;
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 2px 0 0 var(--ro-border-dark);
+  padding: 6px 12px;
+  font-family: var(--pixel-font);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  position: relative;
+  text-align: center;
+  text-shadow: 1px 1px 0 var(--ro-text-shadow);
+  image-rendering: pixelated;
+}
+
+.ro-button-secondary:hover {
+  background-color: #333333;
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 3px 0 0 var(--ro-border-dark);
+}
+
+.ro-button-secondary:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 0 0 0 var(--ro-border-dark);
+}
+
+.ro-button-secondary:disabled,
+.ro-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 2px 0 0 var(--ro-border-dark);
+}
+
+/* Status Bar */
+.ro-status-bar {
+  height: 12px;
+  background-color: var(--ro-bg-dark);
+  border: 1px solid var(--ro-gold);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark);
+  position: relative;
+  overflow: hidden;
+}
+
+.ro-status-fill {
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Status Text */
+.ro-status-text {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: white;
+  font-family: var(--pixel-font);
+  font-size: 6px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 95%;
+  z-index: 10;
+}
+
+/* Character Stats */
+.ro-character-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Menu */
+.ro-menu {
+  background-color: var(--ro-panel-bg);
+  border: 2px solid var(--ro-gold);
+  box-shadow: 0 0 0 1px var(--ro-border-dark),
+              inset 0 0 0 1px var(--ro-panel-light);
+}
+
+/* Menu Item */
+.ro-menu-item {
+  padding: 6px 8px;
+  font-size: 0.7rem;
+  font-family: var(--pixel-font);
+  border-bottom: 1px solid var(--ro-border-dark);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.ro-menu-item:hover {
+  background-color: var(--ro-panel-light);
+  color: var(--ro-gold);
+}
+
+.ro-menu-item:last-child {
+  border-bottom: none;
+}
+
+/* Menu Button */
+.ro-menu-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.ro-menu-line {
+  width: 20px;
+  height: 2px;
+  background-color: var(--ro-text);
+  transition: all 0.2s ease;
+}
+
+/* Item Rarity Colors */
+.ro-rarity-common {
+  color: #ababab;
+}
+
+.ro-rarity-uncommon {
+  color: var(--ro-item-uncommon);
+}
+
+.ro-rarity-rare {
+  color: #4b87ff;
+}
+
+.ro-rarity-epic {
+  color: #c261ff;
+}
+
+.ro-rarity-legendary {
+  color: #ff8d00;
+}
+
+.ro-rarity-ultra {
+  color: #ff4a4a;
+}
+
+/* Inventory Grid */
+.ro-inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 4px;
+}
+
+/* Item Count Badge */
+.ro-item-count {
+  position: absolute;
+  bottom: 35px;
+  right: 10px;
+  background-color: var(--ro-panel-light);
+  border: 1px solid var(--ro-gold);
+  border-radius: 3px;
+  color: var(--ro-gold);
+  padding: 0px 4px;
+  font-size: 10px;
+  line-height: 16px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Character Portrait Frame */
+.ro-portrait {
+  background-color: var(--ro-panel-bg);
+  border: 3px solid var(--ro-gold);
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Stat Icons */
+.ro-stat-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* Dialog Box */
+.ro-dialog {
+  background-color: var(--ro-panel-bg);
+  border: 4px solid var(--ro-gold);
+  box-shadow: 0 0 0 2px var(--ro-border-dark),
+              inset 0 0 0 1px var(--ro-panel-light);
+  padding: 16px;
+  position: relative;
+  max-width: 90%;
+  margin: 0 auto;
+}
+
+/* Progress Bar */
+.ro-progress {
+  width: 100%;
+  height: 8px;
+  background-color: var(--ro-bg-dark);
+  border: 1px solid var(--ro-gold);
+  position: relative;
+  overflow: hidden;
+}
+
+.ro-progress-fill {
+  height: 100%;
+  background-color: var(--ro-accent);
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 0.3s ease;
+}
+
+/* Scrollable Area */
+.ro-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ro-gold) var(--ro-bg-dark);
+}
+
+.ro-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ro-scroll::-webkit-scrollbar-track {
+  background: var(--ro-bg-dark);
+}
+
+.ro-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--ro-gold);
+  border: 1px solid var(--ro-border-dark);
+}
+
+/* Game Panel */
+.game-panel {
+  background-color: var(--ro-panel-bg);
+  border: 2px solid var(--ro-gold);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+}
+
+/* Game Button */
+.game-button {
+  background-color: var(--ro-panel-light);
+  color: var(--ro-gold);
+  border: 2px solid var(--ro-gold);
+  font-family: var(--pixel-font);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.game-button:hover {
+  background-color: var(--ro-accent);
+  box-shadow: 0 0 10px var(--ro-gold);
+}
+
+/* Pixel border animation */
+@keyframes pixelBorderAnimation {
+  0% { box-shadow: 0 -2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  12.5% { box-shadow: 2px -2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  25% { box-shadow: 2px 0 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  37.5% { box-shadow: 2px 2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  50% { box-shadow: 0 2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  62.5% { box-shadow: -2px 2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  75% { box-shadow: -2px 0 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  87.5% { box-shadow: -2px -2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+  100% { box-shadow: 0 -2px 0 var(--ro-gold), 0 0 0 var(--ro-gold); }
+}
+
+@keyframes pixelCornerAnimation {
+  0% { box-shadow: 2px 2px 0 var(--ro-gold), -2px -2px 0 var(--ro-gold), 2px -2px 0 transparent, -2px 2px 0 transparent; }
+  25% { box-shadow: 2px 2px 0 transparent, -2px -2px 0 var(--ro-gold), 2px -2px 0 var(--ro-gold), -2px 2px 0 transparent; }
+  50% { box-shadow: 2px 2px 0 transparent, -2px -2px 0 transparent, 2px -2px 0 var(--ro-gold), -2px 2px 0 var(--ro-gold); }
+  75% { box-shadow: 2px 2px 0 var(--ro-gold), -2px -2px 0 transparent, 2px -2px 0 transparent, -2px 2px 0 var(--ro-gold); }
+  100% { box-shadow: 2px 2px 0 var(--ro-gold), -2px -2px 0 var(--ro-gold), 2px -2px 0 transparent, -2px 2px 0 transparent; }
+}
+
+.pixel-border-animated {
+  position: relative;
+}
+
+.pixel-border-animated::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid transparent;
+  animation: pixelBorderAnimation 2s infinite linear;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.pixel-border-animated::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  animation: pixelCornerAnimation 4s infinite linear;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Pixel dots animation */
+@keyframes pixelDotsAnimation {
+  0%, 100% { 
+    box-shadow: 
+      2px 0 0 var(--ro-gold),
+      -2px 0 0 transparent,
+      0 2px 0 transparent,
+      0 -2px 0 transparent;
+  }
+  25% { 
+    box-shadow: 
+      0 0 0 transparent,
+      0 2px 0 var(--ro-gold),
+      2px 0 0 transparent,
+      -2px 0 0 transparent;
+  }
+  50% { 
+    box-shadow: 
+      -2px 0 0 var(--ro-gold),
+      0 0 0 transparent,
+      0 -2px 0 transparent,
+      0 2px 0 transparent;
+  }
+  75% { 
+    box-shadow: 
+      0 0 0 transparent,
+      0 -2px 0 var(--ro-gold),
+      -2px 0 0 transparent,
+      2px 0 0 transparent;
+  }
+}
+
+.pixel-dots-animated::before {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background-color: var(--ro-gold);
+  top: -2px;
+  right: -2px;
+  animation: pixelDotsAnimation 1s infinite steps(4);
+  z-index: 6;
+}
+
+.pixel-dots-animated::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background-color: var(--ro-gold);
+  bottom: -2px;
+  left: -2px;
+  animation: pixelDotsAnimation 1s infinite steps(4) 0.25s;
+  z-index: 6;
+}
+
+/* Battle Button - Special styling for battle buttons */
+.battle-button {
+  max-width: 90px;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-width: 3px;
+  box-shadow: inset 0 0 0 1px var(--ro-border-dark),
+              0 4px 0 0 var(--ro-border-dark),
+              0 0 8px rgba(255, 193, 7, 0.3);
+  letter-spacing: 0.1em;
+  position: relative;
+  z-index: 10;
+  margin-top: 8px;
+}
