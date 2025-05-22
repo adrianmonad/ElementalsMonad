@@ -16,13 +16,13 @@ export async function GET() {
       signature: "MHgzYmI4NWYxOTY3MjcxMjJhNTYxN2E2ZWM4MjI5NmYxNTA5ODUzMzA5Y2YxMGU2YWRhOWM4N2UzZjg0NDg5MzBkMzgyYjQ2NTBiMWU5ZTg5OGViNTJkOTY5NzVhODNmZDcwNGJmMjZmMjA0OGZkZjVhYzFhM2M4NDdlODZmYjljMzFi"
     },
     frame: {
-      version: "1.0",
+      version: "1",
       name: "Elementals",
       iconUrl: `${APP_URL}/images/icon.png`,
       homeUrl: `${APP_URL}`,
       imageUrl: `${APP_URL}/images/feed.png`,
       screenshotUrls: [`${APP_URL}/images/feed.png`],
-      tags: ["monad", "farcaster", "miniapp", "template", "game", "nft"],
+      tags: ["monad", "farcaster", "game", "nft", "miniapp"],
       primaryCategory: "developer-tools",
       buttonTitle: "Enter Elementals",
       splashImageUrl: `${APP_URL}/images/splash.png`,
