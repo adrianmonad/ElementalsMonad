@@ -138,5 +138,5 @@ export function createElementalShareMessage(tokenId: number | null): string {
   const elementalName = getElementalName(tokenId);
   const rarityTier = getRarityTier(tokenId);
   
-  return `Check out my ${rarityTier} ${elementalName} #${tokenId} in Elementals Adventure on @monad! #ElementalsNFT\n\nHatch your own at: https://elementals.monad.xyz`;
+  return `Check out my ${rarityTier} ${elementalName} #${tokenId} in Elementals Adventure on @monad! #ElementalsNFT\n\nHatch your own at: https://elementals-monad.vercel.app/`;
 } 
