@@ -385,7 +385,7 @@ export function GameFlow() {
               </div>
               
               {/* Battle Arena Button - updated name and makes it open in a new tab */}
-              <a href="http://localhost:3000/battle-area" target="_blank" rel="noopener noreferrer" className="w-full">
+              <a href="https://elementals-monad.vercel.app/battle-area" target="_blank" rel="noopener noreferrer" className="w-full">
                 <button
                   className="game-button w-full py-2 mt-2 bg-[var(--ro-accent)] text-black font-pixel text-lg border-2 border-[var(--ro-gold)] shadow-lg hover:bg-yellow-400 transition-all"
                 >
@@ -464,7 +464,7 @@ export function GameFlow() {
                 )}
                 
                 <div className="flex flex-wrap justify-center gap-2 mt-3">
-                  <a href="http://localhost:3000/battle-area" target="_blank" rel="noopener noreferrer">
+                  <a href="https://elementals-monad.vercel.app/battle-area" target="_blank" rel="noopener noreferrer">
                     <button
                       className="game-button py-2 px-3 text-xs"
                     >

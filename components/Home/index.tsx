@@ -178,7 +178,7 @@ export default function Home() {
                       RANKINGS
                     </button>
                     {/* Always show Battle Arena */}
-                    <a href="http://localhost:3000/battle-area" target="_blank" rel="noopener noreferrer">
+                    <a href="https://elementals-monad.vercel.app/battle-area" target="_blank" rel="noopener noreferrer">
                       <button className="w-full ro-button bg-blue-600 mt-2">
                         BATTLE ARENA
                       </button>

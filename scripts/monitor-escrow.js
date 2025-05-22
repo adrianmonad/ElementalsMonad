@@ -11,7 +11,7 @@ const config = require('../config');
 const ESCROW_WALLET_ADDRESS = config.ESCROW_WALLET_ADDRESS;
 
 // Configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.API_BASE_URL || 'https://elementals-monad.vercel.app';
 const MONITOR_INTERVAL = process.env.MONITOR_INTERVAL || 60000; // 1 minute by default
 
 /**
