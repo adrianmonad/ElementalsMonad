@@ -1,5 +1,5 @@
 export const MESSAGE_EXPIRATION_TIME = 1000 * 60 * 60 * 24 * 30; // 30 day
-export const APP_URL = process.env.NEXT_PUBLIC_URL || "https://rb-sectors-distributed-arrangement.trycloudflare.com";
+export const APP_URL = process.env.NEXT_PUBLIC_URL || "https://elementals-monad.vercel.app";
 
 // Global constants
 
