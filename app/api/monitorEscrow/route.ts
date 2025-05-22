@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listings } from '../createListing/route';
+import { listings } from '@/lib/marketplace';
 import { MarketplaceListing } from '@/lib/types';
 import { NFT_CONTRACT_ADDRESS, ESCROW_WALLET_ADDRESS } from '@/config';
 import { createPublicClient, http } from 'viem';

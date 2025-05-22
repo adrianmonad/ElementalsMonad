@@ -1,14 +1,8 @@
 "use client";
 
-import { Metadata } from "next";
 import TransactionDemo from "@/components/Debug/TransactionDemo";
 import GameTransactionsDemo from "@/components/Debug/GameTransactionsDemo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-export const metadata: Metadata = {
-  title: "Transaction Demos | Elementals",
-  description: "Demos for various transaction methods",
-};
 
 export default function TransactionsDebugPage() {
   return (

@@ -8,13 +8,6 @@ import { getRarityBadgeClass, getElementalName } from '@/lib/elementals';
 import { ethers } from 'ethers';
 import { parseEther, encodeFunctionData, formatEther } from "viem";
 
-// Add type declaration for window.ethereum
-declare global {
-  interface Window {
-    ethereum: any;
-  }
-}
-
 // Placeholder address for when no wallet is connected
 const PLACEHOLDER_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -302,7 +295,7 @@ export default function MagicEdenMarketplace() {
       }
       
       // Try to get a gas estimate from the blockchain
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
       
       // Create a transaction request for estimation
       const txRequest = {
@@ -318,7 +311,7 @@ export default function MagicEdenMarketplace() {
         console.log(`Gas estimate from provider: ${gasEstimate.toString()}`);
         
         // Add 100% safety margin to the estimate (double it)
-        const safeGasLimit = gasEstimate * BigInt(2);
+        const safeGasLimit = BigInt(gasEstimate.toString()) * BigInt(2);
         console.log(`Gas with safety margin: ${safeGasLimit.toString()}`);
         
         // Return the higher of our safe estimate or default

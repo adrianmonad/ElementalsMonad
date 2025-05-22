@@ -4,7 +4,7 @@ import { UpdateListingRequest, MarketplaceListing } from '@/lib/types';
 // In a real application, this would access a database
 // For this example, we'll import from the createListing endpoint
 // This is not ideal for production, but works for our demo
-import { listings } from '../createListing/route';
+import { listings } from '@/lib/marketplace';
 
 export async function POST(request: Request) {
   try {

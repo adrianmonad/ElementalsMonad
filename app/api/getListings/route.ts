@@ -155,4 +155,6 @@ export async function GET(req: NextRequest) {
     }));
     return NextResponse.json({ listings: updatedSampleListings });
   }
-} 
+}
+
+export const dynamic = 'force-dynamic'; 

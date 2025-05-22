@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CreateListingRequest, MarketplaceListing } from '@/lib/types';
+import { listings } from '@/lib/marketplace';
 import { v4 as uuidv4 } from 'uuid';
-
-// In a real application, this would be a database
-// For this example, we'll use an in-memory store
-export let listings: MarketplaceListing[] = [];
 
 export async function POST(req: NextRequest) {
   try {
