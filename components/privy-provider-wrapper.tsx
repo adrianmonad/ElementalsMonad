@@ -32,25 +32,28 @@ export function PrivyProviderWrapper({ children }: { children: ReactNode }) {
     }
   };
 
+  console.log("Initializing Privy Provider with app ID:", process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmaxolxnt001vjo0mw88rm5tl");
+
   return (
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmaxolxnt001vjo0mw88rm5tl"}
       config={{
-        loginMethods: ['email', 'google', 'wallet', 'farcaster'],
+        loginMethods: ['email', 'wallet', 'farcaster'],
         appearance: {
           theme: 'dark',
           accentColor: '#ffc107',
           logo: '/images/elementals-logo.png',
         },
         embeddedWallets: {
+          createOnLogin: "all-users" as const,
           ethereum: { 
-            createOnLogin: "users-without-wallets",
+            createOnLogin: "all-users",
           },
           showWalletUIs: false,
         },
         supportedChains: [monadTestnet],
         defaultChain: monadTestnet,
-        walletConnectCloudProjectId: '3fd3b124db7a6cb91c7cf7dc45cfbbd2'
+        walletConnectCloudProjectId: '3fd3b124db7a6cb91c7cf7dc45cfbbd2',
       }}
     >
       {children}

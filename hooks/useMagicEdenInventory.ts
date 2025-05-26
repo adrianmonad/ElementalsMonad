@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
 
 // Define types for our inventory items
@@ -62,18 +62,33 @@ const getElementalImage = (name: string): string => {
   }
 };
 
+// Maintain a component-level cache for addresses we've already fetched
+// This prevents unnecessary API calls when components remount
+const fetchedAddressesCache = new Map<string, {
+  timestamp: number;
+  inventory: InventoryItem[];
+}>();
+
+// Cache duration - 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
+
 export default function useMagicEdenInventory(address: string | undefined) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
   const [refreshCounter, setRefreshCounter] = useState<number>(0);
   const [lastFetchedAddress, setLastFetchedAddress] = useState<string | undefined>(undefined);
+  const isFetchingRef = useRef<boolean>(false);
 
-  // Function to manually refresh inventory
-  const refreshInventory = () => {
+  // Function to manually refresh inventory - this forces a new fetch
+  const refreshInventory = useCallback(() => {
     console.log(`Manually refreshing inventory for address: ${address}`);
+    if (address) {
+      // Clear the cache for this address when manually refreshing
+      fetchedAddressesCache.delete(address);
+    }
     setRefreshCounter(prev => prev + 1);
-  };
+  }, [address]);
 
   useEffect(() => {
     // Don't fetch if no address is provided
@@ -82,6 +97,25 @@ export default function useMagicEdenInventory(address: string | undefined) {
       setInventory([]);
       setIsLoading(false);
       return;
+    }
+
+    // Check if we're already fetching to prevent duplicate calls
+    if (isFetchingRef.current) {
+      console.log(`Already fetching inventory for ${address}, skipping duplicate fetch`);
+      return;
+    }
+
+    // Check if we have a valid cache entry
+    const now = Date.now();
+    if (fetchedAddressesCache.has(address)) {
+      const cachedData = fetchedAddressesCache.get(address)!;
+      // If cache is still valid (less than 5 minutes old) and not forcing refresh
+      if (now - cachedData.timestamp < CACHE_DURATION && refreshCounter === 0) {
+        console.log(`Using cached inventory for ${address} from hook-level cache`);
+        setInventory(cachedData.inventory);
+        setIsLoading(false);
+        return;
+      }
     }
 
     // Check if the address has changed
@@ -95,7 +129,10 @@ export default function useMagicEdenInventory(address: string | undefined) {
     }
 
     const fetchInventory = async () => {
+      // Set fetching flag to prevent duplicate calls
+      isFetchingRef.current = true;
       setIsLoading(true);
+      
       try {
         console.log(`Fetching tokens for wallet: ${address}`);
         
@@ -103,30 +140,38 @@ export default function useMagicEdenInventory(address: string | undefined) {
         const meResponse = await fetch('/api/getMagicEdenTokens', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-store',
-            'Pragma': 'no-cache'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({ 
             walletAddress: address,
-            timestamp: Date.now() // Add timestamp to prevent caching
+            // Only send timestamp for force refresh
+            ...(refreshCounter > 0 ? { timestamp: Date.now() } : {})
           }),
         });
 
         if (!meResponse.ok) {
-          throw new Error(`Magic Eden API error: ${meResponse.statusText}`);
+          if (meResponse.status === 429) {
+            console.log("Rate limit exceeded, will use cached data if available");
+            // If rate limited and we have cache, use it
+            if (fetchedAddressesCache.has(address)) {
+              const cachedData = fetchedAddressesCache.get(address)!;
+              setInventory(cachedData.inventory);
+              setIsLoading(false);
+              isFetchingRef.current = false;
+              return;
+            }
+          }
+          throw new Error(`Magic Eden API error: ${meResponse.statusText} (${meResponse.status})`);
         }
         
         const meData = await meResponse.json();
         const tokenIds = meData.tokens || [];
         
         console.log(`Found ${tokenIds.length} tokens from Magic Eden Tokens API for address ${address}`);
+        console.log(`Response was cached: ${meData.cached ? 'yes' : 'no'}`);
         
-        // TESTING: Force show sample data regardless of API response
-        const forceSamples = false; // Set to false when ready for production
-        
-        // If we have tokens and aren't forcing samples, create inventory items from real tokens
-        if (tokenIds.length > 0 && !forceSamples) {
+        // If we have tokens, create inventory items from real tokens
+        if (tokenIds.length > 0) {
           const items: InventoryItem[] = tokenIds.map((tokenId: number) => {
             const name = getElementalName(tokenId);
             const elementType = getElementalType(tokenId);
@@ -145,19 +190,26 @@ export default function useMagicEdenInventory(address: string | undefined) {
           });
           
           console.log(`Created ${items.length} inventory items from tokens for address ${address}`);
-          console.log("First 3 items:", items.slice(0, 3));
-          console.log("Rarity distribution:", items.reduce((acc, item) => {
-            acc[item.rarity] = (acc[item.rarity] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>));
+          
+          // Update the cache
+          fetchedAddressesCache.set(address, {
+            timestamp: now,
+            inventory: items
+          });
           
           setInventory(items);
           setIsLoading(false);
+          isFetchingRef.current = false;
           return;
         }
         
         // If no tokens found, show minimal samples for new users
         console.log(`No tokens found for address ${address}, returning empty inventory`);
+        // Cache empty result too
+        fetchedAddressesCache.set(address, {
+          timestamp: now,
+          inventory: []
+        });
         setInventory([]);
         setIsLoading(false);
       } catch (err) {
@@ -168,6 +220,9 @@ export default function useMagicEdenInventory(address: string | undefined) {
         // Set empty inventory on error
         console.log("Error occurred - returning empty inventory");
         setInventory([]);
+      } finally {
+        // Make sure to reset the fetching flag
+        isFetchingRef.current = false;
       }
     };
 

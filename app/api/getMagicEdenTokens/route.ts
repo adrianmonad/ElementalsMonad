@@ -9,13 +9,35 @@ const NFT_CONTRACT = "0x8549FaF1d5553dB17C9c6154141e5357758006cC";
 // Maximum number of tokens to fetch (higher numbers will use pagination)
 const MAX_TOKENS = 100;
 
+// Simple in-memory cache to store API results
+interface CacheEntry {
+  tokens: number[];
+  timestamp: number;
+}
+
+// Cache expires after 15 minutes (900,000 ms) instead of 5 minutes
+const CACHE_EXPIRY = 15 * 60 * 1000;
+const tokenCache: Record<string, CacheEntry> = {};
+
+// Global cache to reduce API calls across different users
+const GLOBAL_CACHE_KEY = 'global_tokens_cache';
+
+// Rate limiting settings
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
+}
+const rateLimits: Record<string, RateLimitEntry> = {};
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute window
+const MAX_REQUESTS_PER_WINDOW = 5; // 5 requests per minute
+
 export async function POST(request: Request) {
   try {
     // Parse the request body
     const body = await request.json();
-    const { walletAddress } = body;
+    const { walletAddress, timestamp = 0, forceRefresh = false } = body;
     
-    console.log(`API: Fetching Magic Eden tokens for wallet ${walletAddress}`);
+    console.log(`API: Request to fetch Magic Eden tokens for wallet ${walletAddress}`);
     
     // Validate inputs
     if (!walletAddress) {
@@ -34,6 +56,93 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    
+    // Create cache key from wallet address
+    const cacheKey = `tokens_${walletAddress.toLowerCase()}`;
+    
+    // Check rate limit
+    const now = Date.now();
+    const clientIp = request.headers.get('x-forwarded-for') || 'unknown';
+    const rateLimitKey = `${clientIp}_${walletAddress.toLowerCase()}`;
+    
+    // First check if we have valid data in the global cache or wallet-specific cache
+    let shouldFetchFromAPI = true;
+    let cachedData = null;
+
+    // Check for global cache first (improves user experience by showing some NFTs immediately)
+    if (tokenCache[GLOBAL_CACHE_KEY] && !forceRefresh) {
+      cachedData = tokenCache[GLOBAL_CACHE_KEY];
+      shouldFetchFromAPI = false;
+      console.log(`API: Using global cached data from ${new Date(cachedData.timestamp).toISOString()}`);
+    }
+    
+    // Then check wallet-specific cache which takes precedence if available
+    if (tokenCache[cacheKey] && (now - tokenCache[cacheKey].timestamp) < CACHE_EXPIRY && !forceRefresh) {
+      cachedData = tokenCache[cacheKey];
+      shouldFetchFromAPI = false;
+      console.log(`API: Returning cached token data for ${walletAddress} from ${new Date(cachedData.timestamp).toISOString()}`);
+    }
+    
+    // If we have valid cached data, return it immediately
+    if (!shouldFetchFromAPI && cachedData) {
+      return NextResponse.json({ 
+        tokens: cachedData.tokens, 
+        cached: true,
+        timestamp: cachedData.timestamp
+      });
+    }
+    
+    // If we get here, we need to check rate limits before making API calls
+    
+    // Initialize or check rate limit
+    if (!rateLimits[rateLimitKey]) {
+      rateLimits[rateLimitKey] = {
+        count: 0,
+        resetTime: now + RATE_LIMIT_WINDOW
+      };
+    }
+    
+    // Clean up expired rate limits
+    Object.keys(rateLimits).forEach(key => {
+      if (rateLimits[key].resetTime < now) {
+        delete rateLimits[key];
+      }
+    });
+    
+    // Check if rate limited
+    if (rateLimits[rateLimitKey].resetTime < now) {
+      // Reset rate limit if window has passed
+      rateLimits[rateLimitKey] = {
+        count: 1,
+        resetTime: now + RATE_LIMIT_WINDOW
+      };
+    } else {
+      // Increment count
+      rateLimits[rateLimitKey].count += 1;
+      
+      // Check if over limit
+      if (rateLimits[rateLimitKey].count > MAX_REQUESTS_PER_WINDOW) {
+        console.log(`API: Rate limit exceeded for ${rateLimitKey}`);
+        
+        // If we have any cached data at all, return it with a warning
+        if (cachedData) {
+          return NextResponse.json({ 
+            tokens: cachedData.tokens, 
+            cached: true,
+            timestamp: cachedData.timestamp,
+            rateLimited: true,
+            message: "Rate limit exceeded, returning cached data"
+          }, { status: 200 }); // Return 200 with cached data even when rate limited
+        }
+        
+        return NextResponse.json(
+          { error: 'Rate limit exceeded. Please try again later.' },
+          { status: 429 }
+        );
+      }
+    }
+    
+    console.log(`API: Cache miss or force refresh, fetching from Magic Eden for ${walletAddress}`);
     
     // Fetch all tokens using pagination
     let allTokens: any[] = [];
@@ -59,6 +168,32 @@ export async function POST(request: Request) {
       if (!meResponse.ok) {
         const errorText = await meResponse.text();
         console.error('Magic Eden API error:', errorText);
+        
+        // If rate limited by Magic Eden API, return whatever we have with a warning
+        if (meResponse.status === 429) {
+          // If we have partial data from current fetch or any cached data, return it
+          if (allTokens.length > 0 || cachedData) {
+            const tokensToReturn = allTokens.length > 0 ? 
+              processRawTokens(allTokens) : 
+              (cachedData ? cachedData.tokens : []);
+            
+            // Store whatever we have in cache
+            if (allTokens.length > 0) {
+              tokenCache[cacheKey] = {
+                tokens: processRawTokens(allTokens),
+                timestamp: now
+              };
+            }
+            
+            return NextResponse.json({ 
+              tokens: tokensToReturn,
+              cached: allTokens.length === 0,
+              partial: allTokens.length > 0,
+              message: "Rate limited by Magic Eden API, returning partial or cached data"
+            });
+          }
+        }
+        
         return NextResponse.json(
           { error: 'Failed to fetch from Magic Eden API', details: errorText },
           { status: meResponse.status }
@@ -86,44 +221,31 @@ export async function POST(request: Request) {
       }
     }
     
-    // Process the response to extract token IDs
-    let tokenIds: number[] = [];
+    // Process tokens and store in cache
+    const tokenIds = processRawTokens(allTokens);
     
-    try {
-      // Extract token IDs from all fetched tokens
-      tokenIds = allTokens
-        .map((item: any) => {
-          if (item.token && item.token.tokenId) {
-            const tokenId = item.token.tokenId;
-            if (typeof tokenId === 'string') {
-              return parseInt(tokenId, 10);
-            } else if (typeof tokenId === 'number') {
-              return tokenId;
-            }
-          }
-          return null;
-        })
-        .filter((id: number | null) => id !== null);
-      
-      console.log(`API: Successfully extracted ${tokenIds.length} token IDs from Magic Eden response`);
-      console.log('Token IDs:', tokenIds); // Log the actual token IDs
-    } catch (error) {
-      console.error('Error processing Magic Eden response:', error);
+    // Store result in cache (both wallet-specific and global)
+    tokenCache[cacheKey] = {
+      tokens: tokenIds,
+      timestamp: now
+    };
+    
+    // Update global cache if we found tokens
+    if (tokenIds.length > 0) {
+      tokenCache[GLOBAL_CACHE_KEY] = {
+        tokens: tokenIds,
+        timestamp: now
+      };
     }
     
-    // If we couldn't extract token IDs, return the raw response for debugging
-    if (tokenIds.length === 0) {
-      console.log('API: No tokens found in Magic Eden response, logging raw data for debugging');
-      console.log(JSON.stringify({ sample: allTokens.slice(0, 2) }).substring(0, 500) + '...');
-      
-      return NextResponse.json({
-        tokens: [],
-        rawResponse: { sample: allTokens.slice(0, 2) },
-        message: 'Could not extract token IDs from Magic Eden response. Check rawResponse for details.'
-      });
-    }
+    // Clean up old cache entries
+    Object.keys(tokenCache).forEach(key => {
+      if ((now - tokenCache[key].timestamp) > CACHE_EXPIRY) {
+        delete tokenCache[key];
+      }
+    });
     
-    return NextResponse.json({ tokens: tokenIds });
+    return NextResponse.json({ tokens: tokenIds, cached: false, timestamp: now });
   } catch (error) {
     console.error('API error:', error);
     
@@ -133,4 +255,33 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// Helper function to process raw token data and extract IDs
+function processRawTokens(allTokens: any[]): number[] {
+  let tokenIds: number[] = [];
+  
+  try {
+    // Extract token IDs from all fetched tokens
+    tokenIds = allTokens
+      .map((item: any) => {
+        if (item.token && item.token.tokenId) {
+          const tokenId = item.token.tokenId;
+          if (typeof tokenId === 'string') {
+            return parseInt(tokenId, 10);
+          } else if (typeof tokenId === 'number') {
+            return tokenId;
+          }
+        }
+        return null;
+      })
+      .filter((id: number | null) => id !== null);
+    
+    console.log(`API: Successfully extracted ${tokenIds.length} token IDs from Magic Eden response`);
+    console.log('Token IDs:', tokenIds); // Log the actual token IDs
+  } catch (error) {
+    console.error('Error processing Magic Eden response:', error);
+  }
+  
+  return tokenIds;
 } 

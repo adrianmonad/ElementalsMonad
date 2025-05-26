@@ -3,12 +3,12 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-// This redirects from the old battle-zone page to the new battle-area implementation
+// This redirects from the old battle-zone page to the new battle-arena implementation
 export default function BattleZoneRedirect() {
   const router = useRouter();
   
   useEffect(() => {
-    router.replace('/battle-area');
+    router.replace('https://elementals-monad.vercel.app/battle-arena');
   }, [router]);
 
   return (

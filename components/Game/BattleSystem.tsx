@@ -50,6 +50,19 @@ export default function BattleSystem({
   const [isBattleStarted, setIsBattleStarted] = useState<boolean>(false);
   const [attacksPerformed, setAttacksPerformed] = useState<number>(0);
   const [bossHealth, setBossHealth] = useState<number>(100);
+  const [battleResults, setBattleResults] = useState<{
+    rarity: string | null;
+    attacks: number;
+    rewards: number;
+    time: number;
+    txHash: string;
+  }>({
+    rarity: null,
+    attacks: 0,
+    rewards: 0,
+    time: 0,
+    txHash: ''
+  });
   
   // Group inventory by rarity
   const groupedInventory = inventory.reduce<GroupedInventory>((acc, item) => {
@@ -248,17 +261,30 @@ export default function BattleSystem({
     // Start cooldown for this rarity
     startCooldown(selectedRarity);
     
-    // Clear timer
-    if (attackTimerId) {
-      clearTimeout(attackTimerId);
-    }
+    // Calculate rewards (random for now)
+    const rewards = Math.floor(Math.random() * 10) + 1;
     
-    // Show success and move to results
-    onShowToast('Battle complete! Boss defeated!');
-    onBattleComplete(hash);
+    // Set battle results
+    setBattleResults({
+      rarity: selectedRarity,
+      attacks: attacksPerformed,
+      rewards,
+      time: initialAttackTime,
+      txHash: hash
+    });
+    
+    // Reset battle state but show results
     setBattleState('results');
+    setSelectedRarity(null);
+    setAttackTimeRemaining(0);
     setBossHealth(0);
-  }, [selectedRarity, attackTimerId, onShowToast, onBattleComplete]);
+    
+    // Reset the battle start flag
+    setIsBattleStarted(false);
+    
+    // Notify parent component
+    onBattleComplete(hash);
+  }, [selectedRarity, attacksPerformed, initialAttackTime, onBattleComplete]);
   
   // Handle battle completion (when timer runs out)
   const handleBattleComplete = useCallback(async () => {
@@ -308,17 +334,20 @@ export default function BattleSystem({
     }
   }, [walletAddress, walletClient, selectedRarity, endBattle]);
   
-  // Reset battle system
+  // Reset battle state
   const resetBattle = useCallback(() => {
+    setBattleState('selection');
     setSelectedRarity(null);
     setAttackTimeRemaining(0);
     setInitialAttackTime(0);
-    setBattleState('selection');
+    setIsAttacking(false);
+    setBossHealth(100);
     setIsBattleStarted(false);
     setAttacksPerformed(0);
-    setBossHealth(100);
+    
     if (attackTimerId) {
       clearTimeout(attackTimerId);
+      setAttackTimerId(null);
     }
   }, [attackTimerId]);
   
@@ -345,8 +374,27 @@ export default function BattleSystem({
     return 'text-white';
   };
   
+  // Format transaction hash as a link to explorer
+  const formatTxLink = (hash: string): JSX.Element => {
+    if (!hash) return <></>;
+    
+    const explorerUrl = `https://testnet.monadexplorer.com/tx/${hash}`;
+    const shortHash = `${hash.slice(0, 6)}...${hash.slice(-4)}`;
+    
+    return (
+      <a 
+        href={explorerUrl}
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="text-blue-400 hover:text-blue-300 underline"
+      >
+        {shortHash}
+      </a>
+    );
+  };
+  
   // Character Selection Screen
-  if (battleState === 'selection') {
+  const renderSelectionScreen = (): JSX.Element => {
     // Debug information
     console.log("Inventory length:", inventory?.length);
     console.log("Grouped inventory:", groupedInventory);
@@ -473,10 +521,10 @@ export default function BattleSystem({
         </div>
       </div>
     );
-  }
+  };
   
   // Battle Screen
-  if (battleState === 'battle') {
+  const renderBattleScreen = (): JSX.Element => {
     return (
       <div className="ro-window w-full max-w-md mx-auto mt-6">
         <div className="ro-window-header text-center py-2 bg-[var(--ro-bg-dark)]">
@@ -554,84 +602,116 @@ export default function BattleSystem({
         </div>
       </div>
     );
-  }
+  };
   
   // Results Screen
-  return (
-    <div className="ro-window w-full max-w-md mx-auto mt-6">
-      <div className="ro-window-header text-center py-2 bg-[var(--ro-bg-dark)]">
-        <h2 className="text-lg font-pixel text-[var(--ro-gold)]">BATTLE RESULTS</h2>
-      </div>
-      <div className="p-4 text-center">
-        <p className="text-xl text-yellow-400 mb-3">Battle Complete!</p>
-        
-        {/* Battle Stats */}
-        <div className="mb-3 bg-gray-800 rounded-lg p-3">
-          {bossHealth <= 0 ? (
-            <p className="text-green-400 font-pixel mb-2">Boss Defeated!</p>
-          ) : (
-            <p className="text-orange-400 font-pixel mb-2">Battle Time Expired!</p>
-          )}
-          <div className="flex justify-between text-xs mb-2">
-            <span>Total Attacks:</span>
-            <span className="text-yellow-300">{attacksPerformed}</span>
-          </div>
-          <div className="flex justify-between text-xs">
-            <span>Damage Dealt:</span>
-            <span className="text-red-400">{Math.min(attacksPerformed * 20, 100)}%</span>
-          </div>
-          <div className="flex justify-between text-xs mt-2">
-            <span>Boss Health:</span>
-            <span className={`${bossHealth <= 0 ? 'text-green-400' : 'text-red-400'}`}>{bossHealth}%</span>
-          </div>
+  const renderResultsScreen = (): JSX.Element => {
+    return (
+      <div className="ro-window w-full max-w-md mx-auto mt-6">
+        <div className="ro-window-header text-center py-2 bg-[var(--ro-bg-dark)]">
+          <h2 className="text-lg font-pixel text-[var(--ro-gold)]">BATTLE RESULTS</h2>
         </div>
-        
-        {selectedRarity && (
-          <div className="mb-4">
-            <p className="text-sm text-gray-300 mb-1">
-              Your <span className={`font-pixel ${getRarityColorClass(selectedRarity)}`}>
-                {selectedRarity === 'ultraRare' ? 'Ultra Rare' : selectedRarity.charAt(0).toUpperCase() + selectedRarity.slice(1)}
-              </span> Elemental is now on cooldown
-            </p>
-            <p className="text-xs text-gray-500">
-              You can use it again in 4 hours
-            </p>
-          </div>
-        )}
-        
-        <div className="flex justify-center my-4">
-          <div className="border-2 border-gray-700 rounded-md overflow-hidden w-32 h-32">
-            <img 
-              src={selectedBossImage} 
-              alt="Boss"
-              className="w-full h-full object-contain pixelated"
-            />
-          </div>
-        </div>
-        
-        {/* Result Message */}
-        <p className="text-sm text-gray-300 mb-4">
-          {bossHealth <= 0
-            ? "The boss was defeated before time ran out! Well done!"
-            : "Remember: Even with maximum attacks, you must wait for the timer to end."}
-        </p>
-        
-        <div className="flex flex-col gap-3 mt-6">
-          <button
-            onClick={resetBattle}
-            className="w-full py-3 ro-button bg-yellow-700 hover:bg-yellow-600 font-pixel"
-          >
-            BATTLE AGAIN
-          </button>
+        <div className="p-4 text-center">
+          <p className="text-xl text-yellow-400 mb-3">Battle Complete!</p>
           
-          <button
-            onClick={resetBattle}
-            className="w-full py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 font-pixel"
-          >
-            RETURN TO SELECTION
-          </button>
+          {/* Battle Stats */}
+          <div className="mb-3 bg-gray-800 rounded-lg p-3">
+            {bossHealth <= 0 ? (
+              <p className="text-green-400 font-pixel mb-2">Boss Defeated!</p>
+            ) : (
+              <p className="text-orange-400 font-pixel mb-2">Battle Time Expired!</p>
+            )}
+            <div className="flex justify-between text-xs mb-2">
+              <span>Total Attacks:</span>
+              <span className="text-yellow-300">{attacksPerformed}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span>Damage Dealt:</span>
+              <span className="text-red-400">{Math.min(attacksPerformed * 20, 100)}%</span>
+            </div>
+            <div className="flex justify-between text-xs mt-2">
+              <span>Boss Health:</span>
+              <span className={`${bossHealth <= 0 ? 'text-green-400' : 'text-red-400'}`}>{bossHealth}%</span>
+            </div>
+            
+            {/* Transaction Hash Link */}
+            {battleResults.txHash && (
+              <div className="mt-3 pt-2 border-t border-gray-700">
+                <div className="flex justify-between text-xs">
+                  <span>Transaction:</span>
+                  <span>{formatTxLink(battleResults.txHash)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {selectedRarity && (
+            <div className="mb-4">
+              <p className="text-sm text-gray-300 mb-1">
+                Your <span className={`font-pixel ${getRarityColorClass(selectedRarity)}`}>
+                  {selectedRarity === 'ultraRare' ? 'Ultra Rare' : selectedRarity.charAt(0).toUpperCase() + selectedRarity.slice(1)}
+                </span> Elemental is now on cooldown
+              </p>
+              <p className="text-xs text-gray-500">
+                You can use it again in 4 hours
+              </p>
+            </div>
+          )}
+          
+          <div className="flex justify-center my-4">
+            <div className="border-2 border-gray-700 rounded-md overflow-hidden w-32 h-32">
+              <img 
+                src={selectedBossImage} 
+                alt="Boss"
+                className="w-full h-full object-contain pixelated"
+              />
+            </div>
+          </div>
+          
+          {/* Result Message */}
+          <p className="text-sm text-gray-300 mb-4">
+            {bossHealth <= 0
+              ? "The boss was defeated before time ran out! Well done!"
+              : "Remember: Even with maximum attacks, you must wait for the timer to end."}
+          </p>
+          
+          <div className="flex flex-col gap-3 mt-6">
+            <button
+              onClick={resetBattle}
+              className="w-full py-3 ro-button bg-yellow-700 hover:bg-yellow-600 font-pixel"
+            >
+              BATTLE AGAIN
+            </button>
+            
+            <button
+              onClick={resetBattle}
+              className="w-full py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 font-pixel"
+            >
+              RETURN TO SELECTION
+            </button>
+          </div>
         </div>
       </div>
+    );
+  };
+  
+  // Render appropriate screen based on battle state
+  const renderContent = (): JSX.Element => {
+    switch (battleState) {
+      case 'selection':
+        return renderSelectionScreen();
+      case 'battle':
+        return renderBattleScreen();
+      case 'results':
+        return renderResultsScreen();
+      default:
+        return renderSelectionScreen();
+    }
+  };
+  
+  return (
+    <div className="battle-system">
+      {renderContent()}
     </div>
   );
 } 

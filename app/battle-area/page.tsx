@@ -1,7 +1,7 @@
 "use client";
 
-import { usePrivy, useLogin, useLogout, useWallets } from '@privy-io/react-auth';
-import { useState, useEffect, useRef } from 'react';
+import { usePrivy, useLogin, useLogout, useWallets, useLoginWithEmail } from '@privy-io/react-auth';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { formatEther, parseEther, Hex, createWalletClient, custom, parseGwei } from 'viem';
 import { monadTestnet } from 'viem/chains';
 import { publicClient } from '../../utils/publicClient';
@@ -12,6 +12,7 @@ import { useInventory } from '@/lib/InventoryContext';
 import { useAccount } from 'wagmi';
 import { ethers } from 'ethers';
 import { Toaster, toast } from 'sonner';
+import { usePrivyWallet } from '@/hooks/usePrivyWallet';
 
 // Enhanced mobile detection with extra checks
 const detectMobile = () => {
@@ -39,9 +40,23 @@ export default function BattleAreaPage() {
   
   // Privy hooks
   const { user, authenticated, ready } = usePrivy();
-  const { ready: walletsReady, wallets } = useWallets();
+  const { ready: walletsReady } = useWallets();
   const { login } = useLogin();
   const { logout } = useLogout();
+  const { sendCode, loginWithCode, state } = useLoginWithEmail();
+  
+  // Use our custom wallet hook for embedded wallet functionality
+  const { 
+    embeddedWalletAddress,
+    balance,
+    isInitialized: isWalletInitialized,
+    isLoading: isWalletLoading,
+    walletClient,
+    error: walletError,
+    initializeWallet,
+    createNewEmbeddedWallet,
+    sendRawTransaction
+  } = usePrivyWallet();
   
   // Farcaster context (for mobile)
   const farcasterContext = useMiniAppContext();
@@ -50,29 +65,22 @@ export default function BattleAreaPage() {
   const { address: mainWalletAddress } = useAccount();
 
   // UI state
-  const [balance, setBalance] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [embeddedWalletAddress, setEmbeddedWalletAddress] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [txHash, setTxHash] = useState("");
   
   // Environment state
   const [useFarcaster, setUseFarcaster] = useState(false);
-  const [isWalletInitialized, setIsWalletInitialized] = useState(true);
   const [authStatusMessage, setAuthStatusMessage] = useState<string>("Ready to battle!");
   
-  // Wallet refs
-  const walletClient = useRef<any>(null);
-  const userNonce = useRef<number>(0);
-  const userBalance = useRef<bigint>(BigInt(0));
-
   // Get user inventory from the shared context
   const { inventory, isLoading: isInventoryLoading, refreshInventory, globalInventory, setMainWalletAddress, setTestInventory } = useInventory();
   
   // Direct NFT fetching for battle area
   const [directInventory, setDirectInventory] = useState<any[]>([]);
   const [isDirectFetching, setIsDirectFetching] = useState<boolean>(false);
+  const [inventoryStatus, setInventoryStatus] = useState<string>("");
   
   // Helper functions for NFT metadata
   const getElementalName = (tokenId: number): string => {
@@ -141,97 +149,131 @@ export default function BattleAreaPage() {
       { id: '5', tokenId: '5', name: 'Nyxar', image: '/assets/Nyxar.gif', description: 'A ultra rare elemental with unique abilities.', rarity: 'Ultra Rare', collectionName: 'Elementals Adventure', elementType: 'air' },
     ];
     setTestInventory(testNFTs);
+    setInventoryStatus(`Found ${testNFTs.length} elementals in your inventory (demo NFTs).`);
     toast.success('Test NFTs added to inventory!');
   };
 
-  // Initialize wallet client
-  const setupWalletClient = async () => {
-    try {
-      setIsLoading(true);
-      setAuthStatusMessage("Initializing wallet...");
-      
-      // For simplicity, we'll just set wallet as initialized without actually setting up a client
-      setIsWalletInitialized(true);
-      setAuthStatusMessage("Wallet initialized and ready to battle!");
-      
-      toast.success("Wallet ready for battle!");
-    } catch (error) {
-      console.error("Error setting up wallet client:", error);
-      setAuthStatusMessage("Failed to initialize wallet. Please try again.");
-      toast.error("Wallet initialization failed.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Directly fetch NFTs from the API
-  const fetchDirectNFTs = async (walletAddress: string) => {
+  // Add this at the top with your imports
+  const fetchDirectNFTsWithBackoff = useCallback(async (walletAddress: string) => {
     if (!walletAddress) return;
     
     // IMPORTANT: For testing, we can force a specific wallet address
-    // This ensures we always use the main wallet that owns the NFTs
     const MAIN_WALLET = "0x51F5c253BFFd38EAb69450C7Cad623a28b82A4E4";
     const addressToUse = MAIN_WALLET; // Always use the main wallet address
     
     setIsDirectFetching(true);
-    try {
-      console.log(`Battle area: Directly fetching NFTs for main wallet ${addressToUse}`);
-      const response = await fetch('/api/getMagicEdenTokens', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store',
-          'Pragma': 'no-cache'
-        },
-        body: JSON.stringify({ 
-          walletAddress: addressToUse,
-          timestamp: Date.now()
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      const tokenIds = data.tokens || [];
-      
-      console.log(`Battle area: Found ${tokenIds.length} tokens from API`);
-      
-      if (tokenIds.length > 0) {
-        // Convert token IDs to inventory items
-        const items = tokenIds.map((tokenId: number) => {
-          const name = getElementalName(tokenId);
-          const elementType = getElementalType(tokenId);
-          const rarity = getRarity(tokenId);
-          
-          return {
-            id: tokenId.toString(),
-            tokenId: tokenId.toString(),
-            name,
-            image: getElementalImage(name),
-            description: `A ${rarity.toLowerCase()} elemental with unique abilities.`,
-            rarity,
-            collectionName: 'Elementals Adventure',
-            elementType
-          };
+    
+    // Only make an API call if the global inventory is empty
+    if (globalInventory.length > 0) {
+      console.log("Using global inventory from context:", globalInventory.length, "items");
+      setDirectInventory(globalInventory);
+      setIsDirectFetching(false);
+      return;
+    }
+    
+    console.log(`Battle area: Fetching NFTs for main wallet ${addressToUse}`);
+    
+    // Try up to 3 times with increasing delays
+    let attempt = 0;
+    const maxAttempts = 3;
+    
+    while (attempt < maxAttempts) {
+      try {
+        console.log(`Fetching NFTs (attempt ${attempt + 1})`);
+        
+        const response = await fetch('/api/getMagicEdenTokens', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            walletAddress: addressToUse,
+            forceRefresh: attempt > 0 // Only force refresh after first attempt
+          }),
         });
         
-        console.log(`Battle area: Created ${items.length} inventory items`);
-        console.log("First few items:", items.slice(0, 3));
+        if (response.status === 429) {
+          // Rate limited, wait longer before next attempt
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`Rate limited. Waiting ${delay}ms before retry`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          attempt++;
+          continue;
+        }
         
-        setDirectInventory(items);
+        if (!response.ok) {
+          throw new Error(`API error: ${response.statusText}`);
+        }
         
-        // Also update the global inventory in the context
-        setTestInventory(items);
-      } else {
-        console.log("No tokens found, setting empty inventory");
-        setDirectInventory([]);
+        const data = await response.json();
+        
+        // Check if response contains a cached flag
+        if (data.cached) {
+          console.log("Using cached data from server from", new Date(data.timestamp).toISOString());
+        }
+        
+        if (data.tokens && data.tokens.length > 0) {
+          processTokenData(data.tokens);
+          
+          // Also update the global inventory context
+          if (data.tokens.length > 0) {
+            setTestInventory(directInventory);
+          }
+        } else {
+          console.log("No tokens found in API response");
+        }
+        
+        break; // Success, exit the loop
+        
+      } catch (error) {
+        console.error("Error fetching NFTs directly:", error);
+        attempt++;
+        if (attempt < maxAttempts) {
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
-    } catch (error) {
-      console.error("Error fetching NFTs directly:", error);
-    } finally {
-      setIsDirectFetching(false);
+    }
+    
+    setIsDirectFetching(false);
+  }, [globalInventory, setTestInventory]);
+
+  // Helper function to process token data
+  const processTokenData = (tokenIds: number[]) => {
+    console.log(`Battle area: Found ${tokenIds.length} tokens from API`);
+    
+    if (tokenIds.length > 0) {
+      // Convert token IDs to inventory items
+      const items = tokenIds.map((tokenId: number) => {
+        const name = getElementalName(tokenId);
+        const elementType = getElementalType(tokenId);
+        const rarity = getRarity(tokenId);
+        
+        return {
+          id: tokenId.toString(),
+          tokenId: tokenId.toString(),
+          name,
+          image: getElementalImage(name),
+          description: `A ${rarity.toLowerCase()} elemental with unique abilities.`,
+          rarity,
+          collectionName: 'Elementals Adventure',
+          elementType
+        };
+      });
+      
+      console.log(`Battle area: Created ${items.length} inventory items`);
+      setDirectInventory(items);
+      setInventoryStatus(`Found ${items.length} elementals in your inventory.`);
+      
+      // Update the global inventory after setting the direct inventory
+      setTimeout(() => {
+        setTestInventory(items);
+      }, 0);
+    } else {
+      console.log("No tokens found, setting empty inventory");
+      setDirectInventory([]);
+      setInventoryStatus("No elementals found in your inventory.");
     }
   };
 
@@ -247,14 +289,14 @@ export default function BattleAreaPage() {
       const balance = await publicClient.getBalance({ 
         address: walletAddress as Hex 
       });
-      userBalance.current = balance;
-      const formattedBalance = formatEther(balance);
-      setBalance(`${formattedBalance} MONAD`);
-      console.log(`Fetched balance for ${walletAddress}: ${formattedBalance}`);
+      console.log(`Fetched balance for ${walletAddress}: ${formatEther(balance)}`);
     } catch (error) {
       console.error("Failed to fetch balance:", error);
     }
   };
+
+  // Refs
+  const hasFetchedNFTs = useRef<boolean>(false);
 
   // Debug Effect: Log important state for debugging
   useEffect(() => {
@@ -268,16 +310,14 @@ export default function BattleAreaPage() {
         accountTypes: user.linkedAccounts?.map(a => a.type),
         hasEmbeddedWallet: !!user.wallet
       } : null,
-      walletsReady,
-      walletsAvailable: wallets?.length,
-      walletTypes: wallets?.map(w => w.walletClientType)
+      walletsReady
     });
     
     if (user && user.linkedAccounts?.length > 0) {
       const walletAccounts = user.linkedAccounts.filter(a => a.type === 'wallet');
       console.log("Wallet accounts in user:", walletAccounts);
     }
-  }, [ready, authenticated, user, walletsReady, wallets]);
+  }, [ready, authenticated, user, walletsReady]);
 
   // Log inventory when it changes
   useEffect(() => {
@@ -305,10 +345,15 @@ export default function BattleAreaPage() {
 
   // Effect to fetch NFTs directly from the API
   useEffect(() => {
-    // Always fetch using the direct fetch method
-    // This will use the hardcoded main wallet address
-    console.log("Fetching NFTs directly on component mount");
-    fetchDirectNFTs("any-address-will-work"); // The address gets replaced with the main wallet in the function
+    // Only fetch once on component mount, and only if we haven't fetched before
+    if (!hasFetchedNFTs.current) {
+      console.log("Fetching NFTs directly on component mount (first time only)");
+      hasFetchedNFTs.current = true;
+      fetchDirectNFTsWithBackoff("any-address-will-work");
+    }
+    
+    // Important: don't include fetchDirectNFTsWithBackoff in the dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Set Farcaster flag (mobile vs desktop)
@@ -336,182 +381,27 @@ export default function BattleAreaPage() {
     console.log("Checking for embedded wallet, user exists:", !!user);
     
     if (!user) {
-      setEmbeddedWalletAddress("");
       setAuthStatusMessage("No user found");
       return;
     }
     
-    // Add a small delay to allow Privy to fully initialize the embedded wallet
-    const extractWalletWithDelay = setTimeout(() => {
-      try {
-        // First check if user.wallet is defined
-        if (user.wallet?.address) {
-          console.log("Found wallet in user.wallet:", user.wallet.address);
-          setEmbeddedWalletAddress(user.wallet.address);
-          fetchWalletBalance(user.wallet.address);
-          setAuthStatusMessage("Using wallet from user.wallet");
-          return;
-        }
-        
-        // If not, try linkedAccounts
-        const privyWallets = user.linkedAccounts.filter(
-          (account) =>
-            account.type === "wallet" &&
-            account.walletClientType === "privy"
-        );
-        
-        console.log("Found wallets in linkedAccounts:", privyWallets.length);
-        
-        if (privyWallets.length > 0 && (privyWallets[0] as any).address) {
-          const walletAddress = (privyWallets[0] as any).address;
-          console.log("Using wallet from linkedAccounts:", walletAddress);
-          setEmbeddedWalletAddress(walletAddress);
-          fetchWalletBalance(walletAddress);
-          setAuthStatusMessage("Using wallet from linkedAccounts");
-        } else {
-          // As a fallback, check the wallets array directly
-          if (walletsReady && wallets && wallets.length > 0) {
-            const privyWallet = wallets.find(w => w.walletClientType === 'privy');
-            if (privyWallet) {
-              console.log("Found wallet in wallets array:", privyWallet.address);
-              setEmbeddedWalletAddress(privyWallet.address);
-              fetchWalletBalance(privyWallet.address);
-              setAuthStatusMessage("Using wallet from wallets array");
-            }
-            
-            // If no Privy wallet found, try to use any wallet as a fallback
-            if (wallets[0]) {
-              console.log("No Privy wallet found, using fallback wallet:", wallets[0].address);
-              setEmbeddedWalletAddress(wallets[0].address);
-              fetchWalletBalance(wallets[0].address);
-              setAuthStatusMessage("Using fallback wallet");
-            }
-          }
-          
-          setEmbeddedWalletAddress("");
-          setAuthStatusMessage("No wallet found in user accounts. Please try refreshing the page.");
-        }
-      } catch (err) {
-        console.error("Error extracting Privy wallet:", err);
-        setEmbeddedWalletAddress("");
-        setAuthStatusMessage(`Error: ${err instanceof Error ? err.message : 'Unknown wallet error'}`);
-      }
-    }, 1500); // 1.5 second delay to allow Privy to fully initialize
-    
-    // Cleanup function to cancel the timeout if the component unmounts
-    return () => clearTimeout(extractWalletWithDelay);
-  }, [user, wallets, walletsReady]);
-  
-  // Setup wallet client from wallets array - use same approach for both platforms
-  useEffect(() => {
-    console.log("Setup wallet client effect running, wallets ready:", walletsReady, "wallets:", wallets?.length);
-    
-    if (!walletsReady) {
-      console.log("Wallets not ready yet");
-      return;
-    }
-    
-    if (!wallets || wallets.length === 0) {
-      console.log("No wallets available yet");
-      setAuthStatusMessage("No wallets available. Waiting for wallet connection...");
-      return;
-    }
-    
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    async function setupWalletClient() {
-      try {
-        // First find the embedded Privy wallet
-        const availableWallets = wallets.map(w => ({
-          type: w.walletClientType,
-          address: w.address,
-          chain: w.chainId
-        }));
-        console.log("Available wallets:", JSON.stringify(availableWallets));
-        
-        // Look for Privy wallet in the wallets array
-        const userWallet = wallets.find(w => w.walletClientType === 'privy');
-        if (!userWallet) {
-          console.log("No Privy wallet found in wallets array");
-          setAuthStatusMessage("No Privy wallet found. Trying again...");
-          
-          // Retry logic for wallet initialization
-          if (retryCount < maxRetries) {
-            retryCount++;
-            console.log(`Retrying wallet setup (${retryCount}/${maxRetries})...`);
-            setTimeout(setupWalletClient, 2000);
-            return;
-          } else {
-            setAuthStatusMessage("Could not find Privy wallet after multiple attempts. Please refresh the page.");
-            return;
-          }
-        }
-        
-        console.log("Setting up wallet for address:", userWallet.address);
-        setEmbeddedWalletAddress(userWallet.address);
-        
-        try {
-          // Get the Ethereum provider from the wallet
-          const ethereumProvider = await userWallet.getEthereumProvider();
-          console.log("Got ethereum provider:", !!ethereumProvider);
-          
-          if (!ethereumProvider) {
-            throw new Error("Ethereum provider is null or undefined");
-          }
-          
-          // Create a wallet client with viem
-          const provider = createWalletClient({
-            chain: monadTestnet,
-            transport: custom(ethereumProvider)
+    if (authenticated && ready) {
+      console.log("User authenticated, initializing wallet");
+      setAuthStatusMessage("Initializing wallet...");
+      
+      // Initialize the wallet after a small delay to ensure Privy is fully loaded
+      setTimeout(() => {
+        initializeWallet()
+          .then(() => {
+            setAuthStatusMessage("Wallet ready for battle!");
+          })
+          .catch(error => {
+            console.error("Failed to initialize wallet:", error);
+            setAuthStatusMessage("Error initializing wallet. Please refresh and try again.");
           });
-          
-          console.log("Wallet client created successfully");
-          walletClient.current = provider;
-          setIsWalletInitialized(true);
-          setAuthStatusMessage("Wallet ready");
-          
-          // Get initial nonce and balance
-          if (userWallet.address) {
-            fetchWalletBalance(userWallet.address);
-            try {
-              userNonce.current = await publicClient.getTransactionCount({ 
-                address: userWallet.address as Hex 
-              });
-              console.log("Got nonce:", userNonce.current);
-            } catch (nonceError) {
-              console.error("Failed to get nonce:", nonceError);
-            }
-          }
-        } catch (providerError) {
-          console.error("Failed to get ethereum provider:", providerError);
-          setAuthStatusMessage(`Provider error: ${providerError instanceof Error ? providerError.message : 'Unknown'}`);
-          
-          // Retry logic for provider initialization
-          if (retryCount < maxRetries) {
-            retryCount++;
-            console.log(`Retrying provider setup (${retryCount}/${maxRetries})...`);
-            setTimeout(setupWalletClient, 2000);
-          } else {
-            setAuthStatusMessage("Could not initialize wallet after multiple attempts. Please refresh the page.");
-          }
-        }
-      } catch (error) {
-        console.error("Failed to set up wallet client:", error);
-        setIsWalletInitialized(false);
-        setAuthStatusMessage(`Setup failed: ${error instanceof Error ? error.message : 'Unknown'}`);
-        
-        // Retry logic for general setup errors
-        if (retryCount < maxRetries) {
-          retryCount++;
-          console.log(`Retrying after error (${retryCount}/${maxRetries})...`);
-          setTimeout(setupWalletClient, 2000);
-        }
-      }
+      }, 1000);
     }
-    
-    setupWalletClient();
-  }, [walletsReady, wallets]);
+  }, [user, authenticated, ready, initializeWallet]);
 
   // Fetch real balance
   const getBalance = async () => {
@@ -520,26 +410,12 @@ export default function BattleAreaPage() {
       return;
     }
     
-    setIsLoading(true);
     try {
       console.log("Getting balance for:", embeddedWalletAddress);
-      // Always fetch real balance from the blockchain
-      const balance = await publicClient.getBalance({ 
-        address: embeddedWalletAddress as Hex 
-      });
-      userBalance.current = balance;
-      const formattedBalance = formatEther(balance);
-      setBalance(`${formattedBalance} MONAD`);
-      
-      console.log(`Wallet address: ${embeddedWalletAddress}`);
-      console.log(`Current balance: ${formattedBalance}`);
-      
       showToastMessage('Balance fetched successfully!');
     } catch (error) {
       console.error("Failed to fetch balance:", error);
       showToastMessage('Failed to fetch balance');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -567,6 +443,13 @@ export default function BattleAreaPage() {
       getBalance();
     }
   }, [authenticated, embeddedWalletAddress]);
+
+  // Update the authStatusMessage based on wallet errors
+  useEffect(() => {
+    if (walletError) {
+      setAuthStatusMessage(`Wallet Error: ${walletError}`);
+    }
+  }, [walletError]);
 
   // Show loading state if needed
   if (!ready && !useFarcaster) {
@@ -596,7 +479,20 @@ export default function BattleAreaPage() {
         
         {/* Loading Notice */}
         <div className="mb-4 text-xs text-yellow-400 bg-gray-800 p-2 rounded text-center">
-          Inventory may load slowly. Please be patient while we fetch your elementals.
+          {isDirectFetching ? (
+            <div className="flex flex-col items-center">
+              <div className="animate-pulse flex space-x-1 mb-2">
+                <div className="h-2 w-2 bg-yellow-400 rounded-full"></div>
+                <div className="h-2 w-2 bg-yellow-400 rounded-full"></div>
+                <div className="h-2 w-2 bg-yellow-400 rounded-full"></div>
+              </div>
+              <span>Fetching your elementals...</span>
+            </div>
+          ) : inventoryStatus ? (
+            <span>{inventoryStatus}</span>
+          ) : (
+            <span>Inventory may load slowly. Please be patient while we fetch your elementals.</span>
+          )}
         </div>
         
         {/* Ready to Battle Message */}
@@ -604,33 +500,25 @@ export default function BattleAreaPage() {
         
         {/* Debug/Test Buttons */}
         <div className="flex flex-wrap gap-2 mb-4">
-          <button 
-            onClick={() => refreshInventory()} 
-            className="bg-purple-700 hover:bg-purple-600 text-white px-3 py-1 rounded-md text-sm"
-          >
-            Refresh Inventory
-          </button>
-          
-          <button 
-            onClick={() => fetchDirectNFTs(mainWalletAddress || embeddedWalletAddress)} 
-            className="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1 rounded-md text-sm"
-          >
-            Direct Fetch NFTs
-          </button>
-          
-          <button 
-            onClick={addTestNFTs} 
-            className="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-md text-sm"
-          >
-            Add Test NFTs
-          </button>
+          {authenticated ? (
+            <button 
+              onClick={() => logout()} 
+              className="bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm"
+            >
+              Logout
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2 items-center">
+              <EmailLoginForm />
+            </div>
+          )}
         </div>
         
         {/* Battle System Component */}
         {isWalletInitialized ? (
           <BattleSystem
-            walletAddress={mainWalletAddress || embeddedWalletAddress}
-            walletClient={walletClient.current}
+            walletAddress={embeddedWalletAddress}
+            walletClient={walletClient}
             inventory={directInventory.length > 0 ? directInventory : inventory}
             onShowToast={showToastMessage}
             onBattleComplete={handleBattleComplete}
@@ -639,8 +527,14 @@ export default function BattleAreaPage() {
           <div className="text-center p-4 bg-gray-800 rounded-lg max-w-md">
             <p className="text-xl font-pixel mb-4">Initializing your battle wallet...</p>
             <p className="text-sm text-gray-400 mb-6">This may take a moment. Please wait.</p>
+            {walletError && (
+              <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-md">
+                <p className="text-sm text-red-300 mb-2">Error initializing wallet:</p>
+                <p className="text-sm break-all">{walletError}</p>
+              </div>
+            )}
             <button
-              onClick={setupWalletClient}
+              onClick={initializeWallet}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
             >
               Retry
@@ -648,6 +542,86 @@ export default function BattleAreaPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function EmailLoginForm() {
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const { sendCode, loginWithCode, state } = useLoginWithEmail();
+
+  const handleSendCode = async () => {
+    if (!email) return;
+    
+    try {
+      await sendCode({ email });
+      setCodeSent(true);
+      toast.success('Code sent! Check your email.');
+    } catch (error) {
+      console.error('Failed to send code:', error);
+      toast.error('Failed to send verification code');
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!code) return;
+    
+    try {
+      await loginWithCode({ code });
+      toast.success('Successfully logged in!');
+    } catch (error) {
+      console.error('Failed to login:', error);
+      toast.error('Invalid verification code');
+    }
+  };
+
+  if (state.status === 'sending-code' || state.status === 'submitting-code') {
+    return <div className="text-center">Loading...</div>;
+  }
+
+  return (
+    <div className="bg-gray-800 p-4 rounded-md">
+      {!codeSent ? (
+        <div className="flex flex-col gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            className="px-3 py-2 rounded bg-gray-700 text-white"
+          />
+          <button
+            onClick={handleSendCode}
+            className="bg-green-700 hover:bg-green-600 text-white px-3 py-2 rounded-md"
+          >
+            Send Code
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Enter verification code"
+            className="px-3 py-2 rounded bg-gray-700 text-white"
+          />
+          <button
+            onClick={handleLogin}
+            className="bg-green-700 hover:bg-green-600 text-white px-3 py-2 rounded-md"
+          >
+            Verify & Login
+          </button>
+          <button
+            onClick={() => setCodeSent(false)}
+            className="text-gray-400 hover:text-white text-sm"
+          >
+            Back to email
+          </button>
+        </div>
+      )}
     </div>
   );
 } 

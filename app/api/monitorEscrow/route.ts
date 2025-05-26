@@ -37,7 +37,7 @@ export async function GET() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ wallet: ESCROW_WALLET_ADDRESS }),
+      body: JSON.stringify({ walletAddress: ESCROW_WALLET_ADDRESS }),
     });
 
     if (!response.ok) {

@@ -16,7 +16,7 @@ export function Navbar() {
     { name: "Home", path: "/" },
     { name: "Game Demo", path: "/debug/game" },
     { name: "Transactions", path: "/debug/transactions" },
-    { name: "Battle Arena", path: "/battle-area" },
+    { name: "Battle Arena", path: "https://elementals-monad.vercel.app/battle-arena" },
     { name: "Inventory", path: "/inventory" },
     { name: "Marketplace", path: "/marketplace" },
   ];
@@ -27,17 +27,29 @@ export function Navbar() {
         {/* Desktop Navigation */}
         <div className="hidden md:flex space-x-6">
           {navLinks.map((link) => (
-            <Link 
-              key={link.path} 
-              href={link.path}
-              className={`text-sm font-pixel transition-colors ${
-                pathname === link.path 
-                  ? "text-[var(--ro-gold)]" 
-                  : "text-gray-300 hover:text-[var(--ro-gold)]"
-              }`}
-            >
-              {link.name}
-            </Link>
+            link.path.startsWith('http') ? (
+              <a 
+                key={link.path} 
+                href={link.path}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`text-sm font-pixel transition-colors text-gray-300 hover:text-[var(--ro-gold)]`}
+              >
+                {link.name}
+              </a>
+            ) : (
+              <Link 
+                key={link.path} 
+                href={link.path}
+                className={`text-sm font-pixel transition-colors ${
+                  pathname === link.path 
+                    ? "text-[var(--ro-gold)]" 
+                    : "text-gray-300 hover:text-[var(--ro-gold)]"
+                }`}
+              >
+                {link.name}
+              </Link>
+            )
           ))}
         </div>
 
@@ -80,18 +92,31 @@ export function Navbar() {
         <div className="md:hidden mt-4 py-2 bg-[#222] rounded-lg shadow-xl absolute left-4 right-4 z-50">
           <div className="flex flex-col px-4 py-2 space-y-3">
             {navLinks.map((link) => (
-              <Link 
-                key={link.path} 
-                href={link.path}
-                className={`text-sm font-pixel py-2 ${
-                  pathname === link.path 
-                    ? "text-[var(--ro-gold)]" 
-                    : "text-gray-300"
-                }`}
-                onClick={() => setIsMenuOpen(false)}
-              >
-                {link.name}
-              </Link>
+              link.path.startsWith('http') ? (
+                <a 
+                  key={link.path} 
+                  href={link.path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-pixel py-2 text-gray-300"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {link.name}
+                </a>
+              ) : (
+                <Link 
+                  key={link.path} 
+                  href={link.path}
+                  className={`text-sm font-pixel py-2 ${
+                    pathname === link.path 
+                      ? "text-[var(--ro-gold)]" 
+                      : "text-gray-300"
+                  }`}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {link.name}
+                </Link>
+              )
             ))}
             <div className="border-t border-[#333] pt-2 mt-2">
               {authenticated ? (
