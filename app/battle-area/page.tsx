@@ -138,24 +138,9 @@ export default function BattleAreaPage() {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
 
-  // State to track if address was copied
-  const [addressCopied, setAddressCopied] = useState(false);
-
   const copyToClipboard = (text: string): void => {
-    navigator.clipboard.writeText(text)
-      .then(() => {
-        setAddressCopied(true);
-        toast.success('Address copied to clipboard!');
-        
-        // Reset copied state after 2 seconds
-        setTimeout(() => {
-          setAddressCopied(false);
-        }, 2000);
-      })
-      .catch(err => {
-        console.error("Failed to copy address:", err);
-        toast.error("Failed to copy address");
-      });
+    navigator.clipboard.writeText(text);
+    toast.success('Address copied to clipboard!');
   };
 
   // Add this at the top with your imports
@@ -546,17 +531,10 @@ export default function BattleAreaPage() {
         
         {/* Wallet Address Display */}
         {mainWalletAddress && (
-          <div className="mb-4 flex items-center space-x-2">
+          <div onClick={() => copyToClipboard(mainWalletAddress)} className="mb-4 cursor-pointer flex items-center">
             <span className="text-xs text-gray-400">
-              {shortenAddress(mainWalletAddress)}
+              {shortenAddress(mainWalletAddress)} (Click to copy)
             </span>
-            <button
-              onClick={() => copyToClipboard(mainWalletAddress)}
-              className="px-1.5 py-0.5 text-xs bg-[var(--ro-gold)] text-black rounded hover:bg-yellow-300 transition-colors"
-              title="Copy wallet address"
-            >
-              {addressCopied ? "✓" : "📋"}
-            </button>
           </div>
         )}
         

@@ -17,7 +17,7 @@ interface BattleSystemProps {
   walletAddress: string;
   walletClient: any;
   inventory: any[];
-  onShowToast: (message: string) => void;
+  onShowToast: (message: string, transactionHash?: string) => void;
   onBattleComplete: (txHash: string) => void;
 }
 
@@ -243,7 +243,7 @@ export default function BattleSystem({
       setBossHealth(newHealth);
       
       // Show attack success
-      onShowToast(`Attack successful! Boss health: ${newHealth}%`);
+      onShowToast(`Attack successful! Boss health: ${newHealth}%`, hash);
       onBattleComplete(hash);
       
     } catch (error) {
@@ -282,9 +282,15 @@ export default function BattleSystem({
     // Reset the battle start flag
     setIsBattleStarted(false);
     
-    // Notify parent component
+    // Only show a toast message if we've performed at least one attack
+    // This helps avoid duplicate notifications
+    if (attacksPerformed > 0) {
+      onShowToast(`Battle complete! You performed ${attacksPerformed} attacks!`, hash);
+    }
+    
+    // Always notify parent component for transaction tracking
     onBattleComplete(hash);
-  }, [selectedRarity, attacksPerformed, initialAttackTime, onBattleComplete]);
+  }, [selectedRarity, attacksPerformed, initialAttackTime, onBattleComplete, onShowToast]);
   
   // Handle battle completion (when timer runs out)
   const handleBattleComplete = useCallback(async () => {

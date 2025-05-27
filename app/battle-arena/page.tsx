@@ -57,6 +57,9 @@ export default function BattleArena() {
   const [error, setError] = useState<string>('');
   const [authStatusMessage, setAuthStatusMessage] = useState<string>("");
   
+  // State to track if address was copied
+  const [addressCopied, setAddressCopied] = useState(false);
+  
   // Reference to track fetch attempts
   const inventoryFetchAttempt = useRef<number>(0);
   const maxInventoryFetchAttempts = 3;
@@ -201,126 +204,88 @@ export default function BattleArena() {
       fetchTimeoutRef.current = null;
     }
     
-    // Check localStorage first for cached data
-    const localStorageCacheKey = `battle_arena_inventory_${address.toLowerCase()}`;
-    if (typeof window !== 'undefined' && !inventoryFetchAttempt.current) {
+    // Check localStorage first
+    if (typeof window !== 'undefined' && localStorageCacheKey) {
       try {
-        const cachedData = localStorage.getItem(localStorageCacheKey);
-        if (cachedData) {
-          const { items, timestamp } = JSON.parse(cachedData);
+        const cached = localStorage.getItem(localStorageCacheKey);
+        if (cached) {
+          const { items, timestamp } = JSON.parse(cached);
           const cacheAge = Date.now() - timestamp;
-          const maxCacheAge = 5 * 60 * 1000; // 5 minutes
+          const cacheTTL = 5 * 60 * 1000; // 5 minutes cache
           
-          if (cacheAge < maxCacheAge && items && items.length > 0) {
-            console.log(`Using cached inventory data (${Math.round(cacheAge/1000)}s old)`);
+          if (cacheAge < cacheTTL && items && items.length > 0) {
+            console.log(`Using cached inventory (${Math.round(cacheAge/1000)}s old)`);
             setDirectInventory(items);
             setInventoryStatus(`Found ${items.length} elementals in your inventory.`);
-            setIsDirectFetching(false);
+            
+            // Still trigger a refresh in the background but with a delay
+            fetchTimeoutRef.current = setTimeout(() => {
+              console.log("Background refresh of inventory data");
+              makeAPICall();
+            }, 3000);
+            
             return;
-          } else {
-            console.log('Cache expired or empty, fetching fresh data');
           }
         }
       } catch (err) {
-        console.error('Error reading from localStorage:', err);
+        console.error("Error reading from localStorage:", err);
       }
     }
     
-    // If we already have global inventory data, use it instead of making an API call
-    if (globalInventory.length > 0) {
-      console.log("Using existing global inventory data:", globalInventory.length, "items");
-      setDirectInventory(globalInventory);
-      setInventoryStatus(`Found ${globalInventory.length} elementals in your inventory.`);
-      setIsDirectFetching(false);
-      
-      // Save global inventory to localStorage
-      if (typeof window !== 'undefined' && localStorageCacheKey) {
-        try {
-          localStorage.setItem(localStorageCacheKey, JSON.stringify({
-            items: globalInventory,
-            timestamp: Date.now()
-          }));
-        } catch (err) {
-          console.error('Failed to save global inventory to localStorage:', err);
-        }
-      }
-      
-      return;
-    }
+    // If no cache or expired, fetch directly
+    makeAPICall();
     
-    // Debounce the API call to prevent multiple simultaneous requests
-    fetchTimeoutRef.current = setTimeout(async () => {
+    // Function to make the actual API call
+    async function makeAPICall() {
+      setIsDirectFetching(true);
+      inventoryFetchAttempt.current++;
+      
       try {
-        setIsDirectFetching(true);
-        setInventoryStatus("Fetching your elementals...");
-        inventoryFetchAttempt.current += 1;
+        console.log(`Fetching NFTs for wallet ${address}, attempt ${inventoryFetchAttempt.current}`);
         
-        console.log(`Fetching inventory data for ${address} (attempt ${inventoryFetchAttempt.current})`);
-        
-        // Proceed with API call
         const response = await fetch('/api/getMagicEdenTokens', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify({ 
             walletAddress: address,
-            // Only force refresh if we've tried more than once
-            forceRefresh: inventoryFetchAttempt.current > 1 
+            forceRefresh: inventoryFetchAttempt.current > 1
           }),
+          // Add a longer timeout for the fetch
+          signal: AbortSignal.timeout(30000)
         });
         
-        if (response.status === 429) {
-          setInventoryStatus("Rate limit exceeded. Trying again in a moment...");
-          
-          // Wait longer between retries based on attempt number
-          const delay = Math.pow(2, inventoryFetchAttempt.current) * 1000;
-          console.log(`Rate limited. Waiting ${delay}ms before retry`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          
-          // Try again recursively
-          setIsDirectFetching(false);
-          fetchInventoryData();
-          return;
-        }
-        
         if (!response.ok) {
-          throw new Error(`API error: ${response.statusText}`);
+          throw new Error(`API error: ${response.status} ${response.statusText}`);
         }
         
         const data = await response.json();
         
-        if (data.cached) {
-          console.log("Using cached data from server from", new Date(data.timestamp).toISOString());
-        }
-        
-        if (data.rateLimited) {
-          setInventoryStatus("Rate limited by API. Using cached data.");
-        }
-        
-        if (data.tokens && data.tokens.length > 0) {
+        if (data.tokens && Array.isArray(data.tokens)) {
           processTokenData(data.tokens);
         } else {
-          console.log("No tokens found in API response");
-          setInventoryStatus("No elementals found in your inventory.");
+          console.error("Invalid response format:", data);
+          setInventoryStatus("Error loading NFTs. Invalid data format.");
         }
+      } catch (err) {
+        console.error("Error fetching NFTs:", err);
+        setInventoryStatus(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
         
-      } catch (error) {
-        console.error("Error fetching inventory:", error);
-        setInventoryStatus("Error fetching inventory. Please try again later.");
-        
-        // Try again with exponential backoff if we haven't reached max attempts
+        // Retry with exponential backoff
         if (inventoryFetchAttempt.current < maxInventoryFetchAttempts) {
-          const delay = Math.pow(2, inventoryFetchAttempt.current) * 1000;
-          console.log(`Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          setIsDirectFetching(false);
-          fetchInventoryData();
-          return;
+          const backoffDelay = Math.pow(2, inventoryFetchAttempt.current) * 1000;
+          console.log(`Will retry in ${backoffDelay}ms...`);
+          
+          fetchTimeoutRef.current = setTimeout(() => {
+            fetchInventoryData();
+          }, backoffDelay);
         }
       } finally {
         setIsDirectFetching(false);
       }
-    }, 100); // Debounce API calls by 100ms
-  }, [globalInventory, address, localStorageCacheKey]);
+    }
+  }, [address, localStorageCacheKey]);
 
   // Effect to fetch inventory when component mounts
   useEffect(() => {
@@ -338,80 +303,12 @@ export default function BattleArena() {
       }
     };
   }, [fetchInventoryData, refreshInventory]);
-
-  // Log inventory when it changes
-  useEffect(() => {
-    console.log("Inventory data updated:", {
-      globalInventoryItems: globalInventory.length,
-      contextInventoryItems: inventory.length,
-      isLoading: isInventoryLoading
-    });
-    
-    if (inventory.length > 0 && inventoryStatus === '') {
-      setInventoryStatus(`Found ${inventory.length} elementals in your inventory.`);
-    }
-  }, [inventory, globalInventory, isInventoryLoading, inventoryStatus]);
-  
-  // Handle login click
-  const handleLogin = () => {
-    login();
-  };
-  
-  // Handle logout click
-  const handleLogout = () => {
-    logout();
-  };
-  
-  // Create a new embedded wallet
-  const handleCreateWallet = async () => {
-    try {
-      setError('');
-      const success = await createNewEmbeddedWallet();
-      if (!success) {
-        setError('Wallet creation failed or was cancelled');
-      }
-    } catch (err) {
-      setError(`Failed to create wallet: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-  
-  // Balance refresh button handler
-  const handleRefreshBalance = async () => {
-    try {
-      setError('');
-      // Just fetch balance without trying to send a transaction
-      toast.success('Balance refreshed');
-    } catch (err) {
-      console.error('Failed to refresh balance:', err);
-      setError('Failed to refresh balance');
-    }
-  };
-  
-  // Test transaction button handler
-  const handleTestTransaction = async () => {
-    if (!embeddedWalletAddress) {
-      toast.error('No wallet address available');
-      return;
-    }
-    
-    try {
-      setError('');
-      setTxHash('');
-      toast.info('Test transaction functionality disabled');
-    } catch (err) {
-      console.error('Failed to send test transaction:', err);
-      setError('Failed to send test transaction');
-    }
-  };
   
   // Get short version of address for display
   const formatAddress = (address: string): string => {
     if (!address) return '';
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
-  
-  // State to track if address was copied
-  const [addressCopied, setAddressCopied] = useState(false);
   
   // Copy address to clipboard
   const copyToClipboard = (address: string) => {
@@ -453,14 +350,32 @@ export default function BattleArena() {
   };
 
   // Show toast message using sonner
-  const showToastMessage = (message: string) => {
-    toast.success(message);
+  const showToastMessage = (message: string, transactionHash?: string) => {
+    if (transactionHash) {
+      // If we have a transaction hash, show a toast with the message and then separate transaction link
+      toast.success(message);
+      
+      // Then show a separate toast with the transaction link
+      toast.success(
+        `View transaction: ${transactionHash.substring(0, 6)}...${transactionHash.substring(transactionHash.length - 4)}`,
+        {
+          action: {
+            label: "View",
+            onClick: () => window.open(`https://testnet.monadexplorer.com/tx/${transactionHash}`, '_blank')
+          }
+        }
+      );
+    } else {
+      // Regular toast without a transaction hash
+      toast.success(message);
+    }
   };
 
   // Handle transaction completion
   const handleBattleComplete = (hash: string) => {
     setTxHash(hash);
-    showToastMessage("Battle completed successfully!");
+    // Don't show a toast here - the BattleSystem component already shows one for each attack
+    // This prevents duplicate notifications
   };
 
   // Format transaction hash as a link to explorer
@@ -476,6 +391,19 @@ export default function BattleArena() {
         {hash}
       </a>
     );
+  };
+
+  // Add a function to refresh the balance
+  const refreshBalance = async () => {
+    if (embeddedWalletAddress) {
+      try {
+        toast.info('Refreshing wallet balance...');
+        await initializeWallet(); // This should refresh the balance
+      } catch (err) {
+        console.error('Error refreshing balance:', err);
+        toast.error('Failed to refresh balance');
+      }
+    }
   };
 
   return (
@@ -543,6 +471,54 @@ export default function BattleArena() {
       {/* Ready to Battle Message */}
       <p className="text-xl mb-8 font-pixel text-green-400">{authStatusMessage}</p>
       
+      {/* Wallet Information Section */}
+      {isWalletInitialized && embeddedWalletAddress && (
+        <div className="w-full max-w-md mb-6 p-4 bg-[var(--ro-panel-bg)] rounded-lg shadow-lg border-2 border-[var(--ro-gold)]">
+          <h3 className="text-lg font-pixel mb-3 text-center text-[var(--ro-gold)]">BATTLE WALLET</h3>
+          
+          <div className="flex flex-col gap-2">
+            <div className="w-full flex flex-row justify-between items-center">
+              <span className="text-sm text-[var(--ro-gold)]">Address:</span>
+              <div className="flex items-center">
+                <span className="font-mono text-xs text-[var(--ro-gold)]">{formatAddress(embeddedWalletAddress)}</span>
+                <button 
+                  onClick={() => copyToClipboard(embeddedWalletAddress)}
+                  className="ml-2 px-1.5 py-0.5 text-xs bg-[var(--ro-gold)] text-black rounded hover:bg-yellow-300 transition-colors"
+                  title="Copy wallet address"
+                >
+                  {addressCopied ? "✓" : "📋"}
+                </button>
+              </div>
+            </div>
+            
+            <div className="w-full flex flex-row justify-between items-center">
+              <span className="text-sm text-[var(--ro-gold)]">Balance:</span>
+              <div className="flex items-center">
+                <span className="font-mono text-xs text-[var(--ro-gold)]">
+                  {balance ? `${parseFloat(balance).toFixed(4)} MON` : "Loading..."}
+                </span>
+                <button
+                  onClick={refreshBalance}
+                  className="ml-2 px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
+                  title="Refresh balance"
+                >
+                  🔄
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-3 p-3 bg-gray-800 rounded-md">
+              <p className="text-xs text-yellow-400 mb-2">
+                ⚠️ This wallet needs gas to perform battle transactions.
+              </p>
+              <p className="text-xs text-white">
+                Please send at least <span className="text-[var(--ro-gold)] font-semibold">0.5 MON</span> to this address to play.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Authentication Buttons */}
       <div className="flex flex-wrap gap-2 mb-4">
         {authenticated ? (
@@ -586,6 +562,9 @@ export default function BattleArena() {
           </button>
         </div>
       )}
+      
+      {/* Toast Container */}
+      <Toaster position="top-center" />
     </div>
   );
 }
@@ -624,18 +603,7 @@ function EmailLoginForm() {
   };
 
   if (state.status === 'sending-code' || state.status === 'submitting-code') {
-    return (
-      <div className="bg-gray-800 p-4 rounded-md">
-        <div className="flex justify-center items-center py-2">
-          <div className="animate-pulse flex space-x-1">
-            <div className="h-2 w-2 bg-blue-400 rounded-full"></div>
-            <div className="h-2 w-2 bg-blue-400 rounded-full"></div>
-            <div className="h-2 w-2 bg-blue-400 rounded-full"></div>
-          </div>
-        </div>
-        <p className="text-center text-sm">Processing...</p>
-      </div>
-    );
+    return <div className="text-center">Loading...</div>;
   }
 
   return (
