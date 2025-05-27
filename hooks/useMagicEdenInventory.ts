@@ -107,7 +107,18 @@ const saveLocalStorageInventory = (address: string, inventory: InventoryItem[]):
   }
 };
 
-export default function useMagicEdenInventory(address: string | undefined) {
+// Helper function to get test NFTs
+const getTestNFTs = (): InventoryItem[] => {
+  return [
+    { id: '1', tokenId: '1', name: 'Rhoxodon', image: '/assets/Rhoxodon.gif', description: 'A uncommon elemental with unique abilities.', rarity: 'Uncommon', collectionName: 'Elementals Adventure', elementType: 'earth' },
+    { id: '2', tokenId: '2', name: 'Nactivyx', image: '/assets/Nactivyx.gif', description: 'A common elemental with unique abilities.', rarity: 'Common', collectionName: 'Elementals Adventure', elementType: 'water' },
+    { id: '3', tokenId: '3', name: 'Infermor', image: '/assets/Infermor.gif', description: 'A epic elemental with unique abilities.', rarity: 'Epic', collectionName: 'Elementals Adventure', elementType: 'fire' },
+    { id: '4', tokenId: '4', name: 'Emberith', image: '/assets/Emberith.gif', description: 'A legendary elemental with unique abilities.', rarity: 'Legendary', collectionName: 'Elementals Adventure', elementType: 'fire' },
+    { id: '5', tokenId: '5', name: 'Nyxar', image: '/assets/Nyxar.gif', description: 'A ultra rare elemental with unique abilities.', rarity: 'Ultra Rare', collectionName: 'Elementals Adventure', elementType: 'air' },
+  ];
+};
+
+export default function useMagicEdenInventory(address: string | undefined, disableApiCalls: boolean = false) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -135,6 +146,14 @@ export default function useMagicEdenInventory(address: string | undefined) {
   const fetchInventory = useCallback(async (addr: string, forceRefresh = false) => {
     // Skip if no address or already fetching
     if (!addr || isFetchingRef.current) return;
+    
+    // If API calls are disabled, use test NFTs
+    if (disableApiCalls) {
+      console.log("API calls disabled, using test NFTs");
+      setInventory(getTestNFTs());
+      setIsLoading(false);
+      return;
+    }
     
     // Set fetching flag to prevent duplicate calls
     isFetchingRef.current = true;

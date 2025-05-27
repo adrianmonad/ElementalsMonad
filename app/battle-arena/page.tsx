@@ -40,7 +40,9 @@ export default function BattleArena() {
     refreshInventory, 
     globalInventory, 
     setMainWalletAddress, 
-    setTestInventory 
+    setTestInventory,
+    disableApiCalls,
+    setDisableApiCalls
   } = useInventory();
   
   // Direct NFT fetching for battle area
@@ -59,6 +61,7 @@ export default function BattleArena() {
   
   // State to track if address was copied
   const [addressCopied, setAddressCopied] = useState(false);
+  const [mainAddressCopied, setMainAddressCopied] = useState(false);
   
   // Reference to track fetch attempts
   const inventoryFetchAttempt = useRef<number>(0);
@@ -182,118 +185,66 @@ export default function BattleArena() {
     }
   };
 
-  // Helper function to fetch NFTs from the API
+  // Helper function to use inventory from context
   const fetchInventoryData = useCallback(async () => {
-    if (inventoryFetchAttempt.current >= maxInventoryFetchAttempts) {
-      console.log("Max fetch attempts reached, using whatever data we have");
-      setInventoryStatus("Unable to fetch inventory data. Using available NFTs.");
+    // Always use the global inventory directly
+    if (inventory && inventory.length > 0) {
+      console.log(`Using ${inventory.length} items from global inventory context`);
+      setDirectInventory(inventory);
+      setInventoryStatus(`Found ${inventory.length} elementals in your inventory.`);
       return;
     }
     
-    // Use the connected wallet address instead of hard-coded test wallet
-    if (!address) {
-      console.log("No wallet address available, cannot fetch inventory");
-      setInventoryStatus("Please connect your wallet to view your elementals.");
-      setIsDirectFetching(false);
-      return;
-    }
-
-    // Clear any existing timeout to prevent duplicate fetches
-    if (fetchTimeoutRef.current) {
-      clearTimeout(fetchTimeoutRef.current);
-      fetchTimeoutRef.current = null;
-    }
-    
-    // Check localStorage first
-    if (typeof window !== 'undefined' && localStorageCacheKey) {
-      try {
-        const cached = localStorage.getItem(localStorageCacheKey);
-        if (cached) {
-          const { items, timestamp } = JSON.parse(cached);
-          const cacheAge = Date.now() - timestamp;
-          const cacheTTL = 5 * 60 * 1000; // 5 minutes cache
-          
-          if (cacheAge < cacheTTL && items && items.length > 0) {
-            console.log(`Using cached inventory (${Math.round(cacheAge/1000)}s old)`);
-            setDirectInventory(items);
-            setInventoryStatus(`Found ${items.length} elementals in your inventory.`);
-            
-            // Still trigger a refresh in the background but with a delay
-            fetchTimeoutRef.current = setTimeout(() => {
-              console.log("Background refresh of inventory data");
-              makeAPICall();
-            }, 3000);
-            
-            return;
-          }
-        }
-      } catch (err) {
-        console.error("Error reading from localStorage:", err);
-      }
-    }
-    
-    // If no cache or expired, fetch directly
-    makeAPICall();
-    
-    // Function to make the actual API call
-    async function makeAPICall() {
+    // If inventory is empty, try refreshing it
+    if (!isInventoryLoading) {
+      console.log("Refreshing global inventory");
       setIsDirectFetching(true);
-      inventoryFetchAttempt.current++;
       
       try {
-        console.log(`Fetching NFTs for wallet ${address}, attempt ${inventoryFetchAttempt.current}`);
+        await refreshInventory();
         
-        const response = await fetch('/api/getMagicEdenTokens', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ 
-            walletAddress: address,
-            forceRefresh: inventoryFetchAttempt.current > 1
-          }),
-          // Add a longer timeout for the fetch
-          signal: AbortSignal.timeout(30000)
-        });
-        
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.tokens && Array.isArray(data.tokens)) {
-          processTokenData(data.tokens);
+        // After refresh, check again
+        if (inventory && inventory.length > 0) {
+          setDirectInventory(inventory);
+          setInventoryStatus(`Found ${inventory.length} elementals in your inventory.`);
         } else {
-          console.error("Invalid response format:", data);
-          setInventoryStatus("Error loading NFTs. Invalid data format.");
+          // If we still don't have inventory, try setting test inventory
+          console.log("No inventory found after refresh, using test inventory");
+          const testInventory = [
+            { id: '1', tokenId: '1', name: 'Rhoxodon', image: '/assets/Rhoxodon.gif', description: 'A uncommon elemental with unique abilities.', rarity: 'Uncommon', collectionName: 'Elementals Adventure', elementType: 'earth' },
+            { id: '2', tokenId: '2', name: 'Nactivyx', image: '/assets/Nactivyx.gif', description: 'A common elemental with unique abilities.', rarity: 'Common', collectionName: 'Elementals Adventure', elementType: 'water' },
+            { id: '3', tokenId: '3', name: 'Infermor', image: '/assets/Infermor.gif', description: 'A epic elemental with unique abilities.', rarity: 'Epic', collectionName: 'Elementals Adventure', elementType: 'fire' },
+            { id: '4', tokenId: '4', name: 'Emberith', image: '/assets/Emberith.gif', description: 'A legendary elemental with unique abilities.', rarity: 'Legendary', collectionName: 'Elementals Adventure', elementType: 'fire' },
+            { id: '5', tokenId: '5', name: 'Nyxar', image: '/assets/Nyxar.gif', description: 'A ultra rare elemental with unique abilities.', rarity: 'Ultra Rare', collectionName: 'Elementals Adventure', elementType: 'air' },
+          ];
+          if (setTestInventory) {
+            setTestInventory(testInventory);
+          }
+          setDirectInventory(testInventory);
+          setInventoryStatus(`Using ${testInventory.length} test elementals.`);
         }
       } catch (err) {
-        console.error("Error fetching NFTs:", err);
-        setInventoryStatus(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        
-        // Retry with exponential backoff
-        if (inventoryFetchAttempt.current < maxInventoryFetchAttempts) {
-          const backoffDelay = Math.pow(2, inventoryFetchAttempt.current) * 1000;
-          console.log(`Will retry in ${backoffDelay}ms...`);
-          
-          fetchTimeoutRef.current = setTimeout(() => {
-            fetchInventoryData();
-          }, backoffDelay);
-        }
+        console.error("Error refreshing inventory:", err);
+        setInventoryStatus("Error loading inventory data.");
       } finally {
         setIsDirectFetching(false);
       }
+    } else {
+      setInventoryStatus("Loading your elementals...");
     }
-  }, [address, localStorageCacheKey]);
+  }, [inventory, isInventoryLoading, refreshInventory, setTestInventory]);
 
-  // Effect to fetch inventory when component mounts
+  // Effect to use global inventory when component mounts
   useEffect(() => {
-    console.log("Battle arena mounted, fetching inventory data");
-    fetchInventoryData();
+    console.log("Battle arena mounted, using global inventory");
     
-    // Also refresh the main inventory context once
-    refreshInventory();
+    // Set the main wallet address in the inventory context if needed
+    if (address && setMainWalletAddress) {
+      setMainWalletAddress(address);
+    }
+    
+    // Try to use existing inventory or refresh it
+    fetchInventoryData();
     
     // Clean up timeouts on unmount
     return () => {
@@ -302,7 +253,7 @@ export default function BattleArena() {
         fetchTimeoutRef.current = null;
       }
     };
-  }, [fetchInventoryData, refreshInventory]);
+  }, [fetchInventoryData, address, setMainWalletAddress]);
   
   // Get short version of address for display
   const formatAddress = (address: string): string => {
@@ -311,15 +262,23 @@ export default function BattleArena() {
   };
   
   // Copy address to clipboard
-  const copyToClipboard = (address: string) => {
+  const copyToClipboard = (address: string, isMainWallet = false) => {
     navigator.clipboard.writeText(address)
       .then(() => {
-        setAddressCopied(true);
+        if (isMainWallet) {
+          setMainAddressCopied(true);
+        } else {
+          setAddressCopied(true);
+        }
         toast.success('Address copied to clipboard!');
         
         // Reset copied state after 2 seconds
         setTimeout(() => {
-          setAddressCopied(false);
+          if (isMainWallet) {
+            setMainAddressCopied(false);
+          } else {
+            setAddressCopied(false);
+          }
         }, 2000);
       })
       .catch(err => {
@@ -406,25 +365,33 @@ export default function BattleArena() {
     }
   };
 
+  // Force use test inventory
+  const forceUseTestInventory = () => {
+    // Disable API calls first
+    if (setDisableApiCalls) {
+      setDisableApiCalls(true);
+    }
+    
+    const testInventory = [
+      { id: '1', tokenId: '1', name: 'Rhoxodon', image: '/assets/Rhoxodon.gif', description: 'A uncommon elemental with unique abilities.', rarity: 'Uncommon', collectionName: 'Elementals Adventure', elementType: 'earth' },
+      { id: '2', tokenId: '2', name: 'Nactivyx', image: '/assets/Nactivyx.gif', description: 'A common elemental with unique abilities.', rarity: 'Common', collectionName: 'Elementals Adventure', elementType: 'water' },
+      { id: '3', tokenId: '3', name: 'Infermor', image: '/assets/Infermor.gif', description: 'A epic elemental with unique abilities.', rarity: 'Epic', collectionName: 'Elementals Adventure', elementType: 'fire' },
+      { id: '4', tokenId: '4', name: 'Emberith', image: '/assets/Emberith.gif', description: 'A legendary elemental with unique abilities.', rarity: 'Legendary', collectionName: 'Elementals Adventure', elementType: 'fire' },
+      { id: '5', tokenId: '5', name: 'Nyxar', image: '/assets/Nyxar.gif', description: 'A ultra rare elemental with unique abilities.', rarity: 'Ultra Rare', collectionName: 'Elementals Adventure', elementType: 'air' },
+    ];
+    
+    if (setTestInventory) {
+      setTestInventory(testInventory);
+    }
+    
+    setDirectInventory(testInventory);
+    setInventoryStatus(`Using ${testInventory.length} test elementals.`);
+    toast.success("Using test inventory (API calls disabled)");
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center pt-8 pb-16 bg-black text-white">
       <h1 className="text-5xl font-bold mb-4 font-pixel">Battle Arena</h1>
-      
-      {/* Wallet Address Display */}
-      {address && (
-        <div className="mb-4 flex items-center space-x-2">
-          <span className="text-xs text-gray-400">
-            {formatAddress(address)}
-          </span>
-          <button
-            onClick={() => copyToClipboard(address)}
-            className="px-1.5 py-0.5 text-xs bg-[var(--ro-gold)] text-black rounded hover:bg-yellow-300 transition-colors"
-            title="Copy wallet address"
-          >
-            {addressCopied ? "✓" : "📋"}
-          </button>
-        </div>
-      )}
       
       {/* Loading Notice */}
       <div className="mb-4 text-xs text-yellow-400 bg-gray-800 p-2 rounded text-center">
@@ -450,6 +417,13 @@ export default function BattleArena() {
             >
               Refresh
             </button>
+            <button 
+              onClick={forceUseTestInventory} 
+              className="ml-2 text-green-400 hover:text-green-300 underline text-xs"
+              disabled={isDirectFetching}
+            >
+              Use Test NFTs
+            </button>
           </div>
         ) : (
           <div className="flex items-center justify-center">
@@ -464,6 +438,13 @@ export default function BattleArena() {
             >
               Retry
             </button>
+            <button 
+              onClick={forceUseTestInventory} 
+              className="ml-2 text-green-400 hover:text-green-300 underline text-xs"
+              disabled={isDirectFetching}
+            >
+              Use Test NFTs
+            </button>
           </div>
         )}
       </div>
@@ -476,15 +457,37 @@ export default function BattleArena() {
         <div className="w-full max-w-md mb-6 p-4 bg-[var(--ro-panel-bg)] rounded-lg shadow-lg border-2 border-[var(--ro-gold)]">
           <h3 className="text-lg font-pixel mb-3 text-center text-[var(--ro-gold)]">BATTLE WALLET</h3>
           
+          {/* Main wallet display */}
+          {address && (
+            <div className="mb-4 p-3 bg-gray-800 rounded-md">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-400">Main Wallet:</span>
+                <div className="flex items-center">
+                  <span className="font-mono text-xs text-gray-400">{formatAddress(address)}</span>
+                  <button 
+                    onClick={() => copyToClipboard(address, true)}
+                    className="ml-2 px-1.5 py-0.5 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
+                    title="Copy main wallet address"
+                  >
+                    {mainAddressCopied ? "✓" : "📋"}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 italic">
+                This wallet holds your NFTs but is not used for battle transactions.
+              </p>
+            </div>
+          )}
+          
           <div className="flex flex-col gap-2">
             <div className="w-full flex flex-row justify-between items-center">
-              <span className="text-sm text-[var(--ro-gold)]">Address:</span>
+              <span className="text-sm text-[var(--ro-gold)]">Battle Address:</span>
               <div className="flex items-center">
                 <span className="font-mono text-xs text-[var(--ro-gold)]">{formatAddress(embeddedWalletAddress)}</span>
                 <button 
                   onClick={() => copyToClipboard(embeddedWalletAddress)}
                   className="ml-2 px-1.5 py-0.5 text-xs bg-[var(--ro-gold)] text-black rounded hover:bg-yellow-300 transition-colors"
-                  title="Copy wallet address"
+                  title="Copy battle wallet address"
                 >
                   {addressCopied ? "✓" : "📋"}
                 </button>
@@ -508,11 +511,19 @@ export default function BattleArena() {
             </div>
             
             <div className="mt-3 p-3 bg-gray-800 rounded-md">
-              <p className="text-xs text-yellow-400 mb-2">
-                ⚠️ This wallet needs gas to perform battle transactions.
+              <div className="flex items-center mb-2">
+                <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-yellow-600 text-black rounded-full mr-2">
+                  ⚠️
+                </div>
+                <p className="text-sm font-semibold text-yellow-400">
+                  IMPORTANT: Send gas to BATTLE WALLET
+                </p>
+              </div>
+              <p className="text-xs text-white mb-2">
+                The <span className="font-semibold text-[var(--ro-gold)]">Battle Wallet</span> (address above) needs gas to perform battle transactions. This is different from your main wallet.
               </p>
-              <p className="text-xs text-white">
-                Please send at least <span className="text-[var(--ro-gold)] font-semibold">0.5 MON</span> to this address to play.
+              <p className="text-xs text-white font-semibold">
+                Please send at least <span className="text-[var(--ro-gold)] font-bold">0.5 MON</span> to the Battle Wallet address to play.
               </p>
             </div>
           </div>

@@ -15,6 +15,8 @@ interface InventoryContextType {
   addItemsToInventory: (items: any[]) => void;
   globalInventory: any[];
   setTestInventory: (items: any[]) => void;
+  disableApiCalls: boolean;
+  setDisableApiCalls: (disable: boolean) => void;
 }
 
 // Create the context with a default value
@@ -27,7 +29,9 @@ const InventoryContext = createContext<InventoryContextType>({
   setMainWalletAddress: () => {},
   addItemsToInventory: () => {},
   globalInventory: [],
-  setTestInventory: () => {}
+  setTestInventory: () => {},
+  disableApiCalls: false,
+  setDisableApiCalls: () => {}
 });
 
 // Provider component
@@ -41,6 +45,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Store a global inventory that can be shared across components
   const [globalInventory, setGlobalInventory] = useState<any[]>([]);
   
+  // Flag to control whether API calls should be made
+  const [disableApiCalls, setDisableApiCalls] = useState<boolean>(false);
+  
   // Update mainWalletAddress when the connected address changes
   useEffect(() => {
     if (address) {
@@ -51,7 +58,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   
   // Use the hook to fetch inventory data
   // Important: Always use the main wallet address from wagmi
-  const { inventory, isLoading, error, refreshInventory } = useMagicEdenInventory(address);
+  const { inventory, isLoading, error, refreshInventory } = useMagicEdenInventory(address, disableApiCalls);
 
   // Add items to global inventory
   const addItemsToInventory = (items: any[]) => {
@@ -104,7 +111,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setMainWalletAddress,
         addItemsToInventory,
         globalInventory,
-        setTestInventory
+        setTestInventory,
+        disableApiCalls,
+        setDisableApiCalls
       }}
     >
       {children}
