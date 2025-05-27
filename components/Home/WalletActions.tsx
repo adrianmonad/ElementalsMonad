@@ -9,6 +9,8 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
+import { useState } from "react";
+import { toast } from "sonner";
 
 export function WalletActions() {
   const { isEthProviderAvailable } = useMiniAppContext();
@@ -17,6 +19,9 @@ export function WalletActions() {
   const { data: hash, sendTransaction } = useSendTransaction();
   const { switchChain } = useSwitchChain();
   const { connect } = useConnect();
+  
+  // State to track if copy was successful
+  const [copied, setCopied] = useState(false);
 
   async function sendTransactionHandler() {
     sendTransaction({
@@ -24,6 +29,26 @@ export function WalletActions() {
       value: parseEther("1"),
     });
   }
+  
+  // Function to copy wallet address to clipboard
+  const copyAddressToClipboard = () => {
+    if (address) {
+      navigator.clipboard.writeText(address)
+        .then(() => {
+          setCopied(true);
+          toast.success("Address copied to clipboard!");
+          
+          // Reset copied state after 2 seconds
+          setTimeout(() => {
+            setCopied(false);
+          }, 2000);
+        })
+        .catch(err => {
+          console.error("Failed to copy address: ", err);
+          toast.error("Failed to copy address");
+        });
+    }
+  };
 
   return (
     <div className="w-full max-w-md mx-auto p-4 bg-[var(--ro-panel-bg)] rounded-lg shadow-lg border-2 border-[var(--ro-gold)] font-pixel text-[var(--ro-gold)]">
@@ -34,7 +59,18 @@ export function WalletActions() {
             <div className="w-full flex flex-col gap-2 items-center">
               <div className="w-full flex flex-row justify-between items-center">
                 <span className="text-xs text-[var(--ro-gold)]">Wallet:</span>
-                <span className="font-mono text-xs text-[var(--ro-gold)]">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "-"}</span>
+                <div className="flex items-center">
+                  <span className="font-mono text-xs text-[var(--ro-gold)]">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "-"}</span>
+                  {address && (
+                    <button 
+                      onClick={copyAddressToClipboard}
+                      className="ml-2 px-1.5 py-0.5 text-xs bg-[var(--ro-gold)] text-black rounded hover:bg-yellow-300 transition-colors"
+                      title="Copy wallet address"
+                    >
+                      {copied ? "✓" : "📋"}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="w-full flex flex-row justify-between items-center">
                 <span className="text-xs text-[var(--ro-gold)]">Chain ID:</span>

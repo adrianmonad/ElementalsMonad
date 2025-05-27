@@ -35,9 +35,9 @@ export async function POST(request: Request) {
   try {
     // Parse the request body
     const body = await request.json();
-    const { walletAddress, timestamp = 0, forceRefresh = false } = body;
+    const { walletAddress, forceRefresh = false } = body;
     
-    console.log(`API: Request to fetch Magic Eden tokens for wallet ${walletAddress}`);
+    console.log(`API: Request to fetch Magic Eden tokens for wallet ${walletAddress}${forceRefresh ? ' (forced refresh)' : ''}`);
     
     // Validate inputs
     if (!walletAddress) {
@@ -69,21 +69,34 @@ export async function POST(request: Request) {
     let shouldFetchFromAPI = true;
     let cachedData = null;
 
-    // Check for global cache first (improves user experience by showing some NFTs immediately)
-    if (tokenCache[GLOBAL_CACHE_KEY] && !forceRefresh) {
+    // Check wallet-specific cache first as it's more accurate
+    if (tokenCache[cacheKey] && !forceRefresh) {
+      cachedData = tokenCache[cacheKey];
+      const cacheAge = now - cachedData.timestamp;
+      const isExpired = cacheAge > CACHE_EXPIRY;
+      
+      if (!isExpired) {
+        shouldFetchFromAPI = false;
+        console.log(`API: Returning cached token data for ${walletAddress} from ${new Date(cachedData.timestamp).toISOString()} (age: ${Math.round(cacheAge / 1000)}s)`);
+      } else {
+        console.log(`API: Cache expired for ${walletAddress}, fetching fresh data`);
+      }
+    }
+    
+    // Then check global cache as fallback if no wallet-specific cache or it's expired
+    if (shouldFetchFromAPI && tokenCache[GLOBAL_CACHE_KEY] && !forceRefresh) {
       cachedData = tokenCache[GLOBAL_CACHE_KEY];
       shouldFetchFromAPI = false;
       console.log(`API: Using global cached data from ${new Date(cachedData.timestamp).toISOString()}`);
     }
     
-    // Then check wallet-specific cache which takes precedence if available
-    if (tokenCache[cacheKey] && (now - tokenCache[cacheKey].timestamp) < CACHE_EXPIRY && !forceRefresh) {
-      cachedData = tokenCache[cacheKey];
-      shouldFetchFromAPI = false;
-      console.log(`API: Returning cached token data for ${walletAddress} from ${new Date(cachedData.timestamp).toISOString()}`);
+    // If force refresh, log it but still keep cached data as fallback
+    if (forceRefresh && cachedData) {
+      console.log(`API: Force refresh requested, but keeping cache as fallback`);
+      shouldFetchFromAPI = true;
     }
     
-    // If we have valid cached data, return it immediately
+    // If we have valid cached data and don't need to fetch, return it immediately
     if (!shouldFetchFromAPI && cachedData) {
       return NextResponse.json({ 
         tokens: cachedData.tokens, 
@@ -142,7 +155,7 @@ export async function POST(request: Request) {
       }
     }
     
-    console.log(`API: Cache miss or force refresh, fetching from Magic Eden for ${walletAddress}`);
+    console.log(`API: ${forceRefresh ? 'Force refreshing' : 'Cache miss'}, fetching from Magic Eden for ${walletAddress}`);
     
     // Fetch all tokens using pagination
     let allTokens: any[] = [];
@@ -157,67 +170,97 @@ export async function POST(request: Request) {
       
       console.log(`API: Calling Magic Eden Tokens API (page ${offset/limit + 1}): ${meTokensUrl}`);
       
-      const meResponse = await fetch(meTokensUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${MAGIC_EDEN_API_KEY}`,
-          'accept': 'application/json'
-        }
-      });
-      
-      if (!meResponse.ok) {
-        const errorText = await meResponse.text();
-        console.error('Magic Eden API error:', errorText);
+      try {
+        const meResponse = await fetch(meTokensUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${MAGIC_EDEN_API_KEY}`,
+            'accept': 'application/json'
+          },
+          // Add a short timeout to prevent hanging requests
+          signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
         
-        // If rate limited by Magic Eden API, return whatever we have with a warning
-        if (meResponse.status === 429) {
-          // If we have partial data from current fetch or any cached data, return it
-          if (allTokens.length > 0 || cachedData) {
-            const tokensToReturn = allTokens.length > 0 ? 
-              processRawTokens(allTokens) : 
-              (cachedData ? cachedData.tokens : []);
-            
-            // Store whatever we have in cache
-            if (allTokens.length > 0) {
-              tokenCache[cacheKey] = {
-                tokens: processRawTokens(allTokens),
-                timestamp: now
-              };
+        if (!meResponse.ok) {
+          const errorText = await meResponse.text();
+          console.error('Magic Eden API error:', errorText);
+          
+          // If rate limited by Magic Eden API, return whatever we have with a warning
+          if (meResponse.status === 429) {
+            // If we have partial data from current fetch or any cached data, return it
+            if (allTokens.length > 0 || cachedData) {
+              const tokensToReturn = allTokens.length > 0 ? 
+                processRawTokens(allTokens) : 
+                (cachedData ? cachedData.tokens : []);
+              
+              // Store whatever we have in cache
+              if (allTokens.length > 0) {
+                tokenCache[cacheKey] = {
+                  tokens: processRawTokens(allTokens),
+                  timestamp: now
+                };
+              }
+              
+              return NextResponse.json({ 
+                tokens: tokensToReturn,
+                cached: allTokens.length === 0,
+                partial: allTokens.length > 0,
+                message: "Rate limited by Magic Eden API, returning partial or cached data"
+              });
             }
-            
-            return NextResponse.json({ 
-              tokens: tokensToReturn,
-              cached: allTokens.length === 0,
-              partial: allTokens.length > 0,
-              message: "Rate limited by Magic Eden API, returning partial or cached data"
-            });
           }
+          
+          throw new Error(`Failed to fetch from Magic Eden API: ${errorText}`);
         }
         
-        return NextResponse.json(
-          { error: 'Failed to fetch from Magic Eden API', details: errorText },
-          { status: meResponse.status }
-        );
-      }
-      
-      const meData = await meResponse.json();
-      
-      // Check if response contains tokens
-      if (meData && Array.isArray(meData.tokens) && meData.tokens.length > 0) {
-        // Add tokens from this page to our collection
-        allTokens = [...allTokens, ...meData.tokens];
+        const meData = await meResponse.json();
         
-        // Update offset for next page
-        offset += limit;
+        // Check if response contains tokens
+        if (meData && Array.isArray(meData.tokens) && meData.tokens.length > 0) {
+          // Add tokens from this page to our collection
+          allTokens = [...allTokens, ...meData.tokens];
+          
+          // Update offset for next page
+          offset += limit;
+          
+          // Check if we need to fetch more (got full page)
+          hasMore = meData.tokens.length === limit;
+          
+          console.log(`API: Received ${meData.tokens.length} tokens on page ${offset/limit}. Total so far: ${allTokens.length}`);
+        } else {
+          // No more tokens to fetch
+          hasMore = false;
+          console.log(`API: No more tokens found at offset ${offset}`);
+        }
+      } catch (error) {
+        // Handle fetch errors, including timeouts
+        console.error(`API: Error fetching page ${offset/limit + 1}:`, error);
         
-        // Check if we need to fetch more (got full page)
-        hasMore = meData.tokens.length === limit;
+        // If we have partial data from current fetch or any cached data, return it
+        if (allTokens.length > 0 || cachedData) {
+          const tokensToReturn = allTokens.length > 0 ? 
+            processRawTokens(allTokens) : 
+            (cachedData ? cachedData.tokens : []);
+          
+          // Store whatever we have in cache if better than nothing
+          if (allTokens.length > 0) {
+            tokenCache[cacheKey] = {
+              tokens: processRawTokens(allTokens),
+              timestamp: now
+            };
+          }
+          
+          return NextResponse.json({ 
+            tokens: tokensToReturn,
+            cached: allTokens.length === 0,
+            partial: allTokens.length > 0,
+            error: `Error fetching from Magic Eden API: ${error instanceof Error ? error.message : String(error)}`,
+            message: "Error fetching all pages, returning partial or cached data"
+          });
+        }
         
-        console.log(`API: Received ${meData.tokens.length} tokens on page ${offset/limit}. Total so far: ${allTokens.length}`);
-      } else {
-        // No more tokens to fetch
-        hasMore = false;
-        console.log(`API: No more tokens found at offset ${offset}`);
+        // If we have no data, rethrow to be caught by the outer catch
+        throw error;
       }
     }
     

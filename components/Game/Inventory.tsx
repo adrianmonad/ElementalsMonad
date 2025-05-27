@@ -18,12 +18,16 @@ export default function Inventory() {
   const [selectedTab, setSelectedTab] = useState<'all' | 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'ultra'>('all');
   const [isListingInProgress, setIsListingInProgress] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   
   // Add a force refresh function
   const handleForceRefresh = () => {
     console.log("Manually refreshing inventory...");
     setIsRefreshing(true);
     refreshInventory(); // Use the function from the context
+    
+    // Set the last refresh time
+    setLastRefreshTime(new Date());
     
     // Set a timeout to reset the refreshing state after 2 seconds
     // This ensures the user sees the refresh animation
@@ -100,6 +104,25 @@ export default function Inventory() {
     if (lowerRarity.includes('ultra')) return 'ro-rarity-ultra';
     return 'text-white';
   };
+
+  // Format the last refresh time
+  const getLastRefreshText = () => {
+    if (!lastRefreshTime) return "";
+    
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastRefreshTime.getTime()) / 1000); // seconds
+    
+    if (diff < 60) return `Last refreshed ${diff} seconds ago`;
+    if (diff < 3600) return `Last refreshed ${Math.floor(diff / 60)} minutes ago`;
+    return `Last refreshed ${Math.floor(diff / 3600)} hours ago`;
+  };
+
+  // Automatically set refresh time when inventory changes
+  useEffect(() => {
+    if (inventory.length > 0 && !lastRefreshTime) {
+      setLastRefreshTime(new Date());
+    }
+  }, [inventory.length, lastRefreshTime]);
 
   // Handle listing an NFT for sale
   const handleListForSale = async (tokenId: string) => {
@@ -216,10 +239,21 @@ export default function Inventory() {
         </div>
       )}
       
-      {/* Refresh Button */}
-      <div className="flex justify-between mb-4">
-        <div className="text-xs font-pixel text-[var(--ro-gold)]">
-          {isRefreshing ? "Refreshing inventory..." : inventory.length > 0 ? `You have ${inventory.length} elementals` : ""}
+      {/* Refresh Status Bar */}
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-xs font-pixel">
+          {isRefreshing ? (
+            <span className="text-green-400 animate-pulse">Refreshing inventory...</span>
+          ) : inventory.length > 0 ? (
+            <>
+              <span className="text-[var(--ro-gold)]">{`You have ${inventory.length} elementals`}</span>
+              {lastRefreshTime && (
+                <span className="text-gray-400 ml-2 text-[10px]">{getLastRefreshText()}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-gray-400">No elementals found</span>
+          )}
         </div>
         <button
           onClick={handleForceRefresh}
@@ -236,10 +270,27 @@ export default function Inventory() {
         </button>
       </div>
       
-      {/* Loading Notice */}
-      <div className="mb-4 text-xs text-yellow-400 bg-gray-800 p-2 rounded text-center">
-        Inventory may load slowly. Keep clicking refresh if it doesn't show up yet.
-      </div>
+      {/* Improved Loading Status */}
+      {isLoading && !isRefreshing && !inventory.length ? (
+        <div className="mb-4 p-2 bg-[#1a1a2e] border border-[#333] rounded text-center">
+          <div className="flex items-center justify-center mb-1">
+            <div className="w-4 h-4 border-t-2 border-[var(--ro-gold)] rounded-full animate-spin mr-2"></div>
+            <span className="text-[var(--ro-gold)] text-xs font-pixel">Loading your elementals...</span>
+          </div>
+          <p className="text-gray-400 text-[10px]">This may take a moment the first time.</p>
+        </div>
+      ) : inventory.length > 0 ? (
+        <div className="mb-4 text-xs text-green-400 bg-[#0a2b1d] border border-green-900 p-2 rounded text-center">
+          <p className="flex items-center justify-center">
+            <span className="mr-1">✓</span> 
+            Your elementals are loaded and cached for faster viewing
+          </p>
+        </div>
+      ) : (
+        <div className="mb-4 text-xs text-yellow-400 bg-gray-800 p-2 rounded text-center">
+          No elementals found. If you own elementals, try clicking refresh.
+        </div>
+      )}
       
       {/* Inventory Tabs - Scrollable */}
       <div className="flex border-b-2 border-[var(--ro-border-dark)] mb-4 overflow-x-auto pb-1">
